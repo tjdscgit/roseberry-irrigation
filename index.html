@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Roseberry Irrigation</title>
+<meta name="theme-color" content="#1F4E5F">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<!--
+  Roseberry irrigation app. Talks only to Supabase (the planner's database), never to the
+  devices: it shows what the bridge on the shed PC reports, and asks for runs by adding rows
+  to irrigation_commands. Every safety rule is enforced by the bridge, so the worst this page
+  can do is ask. The publishable key below is meant to be public; every table is gated on the
+  shared farm login (row level security), same as the planner.
+-->
+<style>
+:root {
+  --paper:#F7F5EF; --paper-2:#EFEBE0; --paper-3:#E7E2D4;
+  --ink:#14181B; --ink-2:#5C6660; --line:#D9D4C6; --line-2:#C7C1AF;
+  --steel:#1F4E5F; --steel-soft:#3C7286; --steel-tint:rgba(31,78,95,.10);
+  --clay:#C64A2E; --clay-tint:rgba(198,74,46,.10); --ok:#3F7D46; --ok-tint:rgba(63,125,70,.12);
+  --amber:#A86B12; --amber-tint:rgba(168,107,18,.12);
+  --shadow:0 1px 0 rgba(0,0,0,.04), 0 8px 24px -12px rgba(20,24,27,.28);
+  --serif:"Fraunces",Georgia,"Times New Roman",serif;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:#14181B; --paper-2:#1D2226; --paper-3:#262B2F;
+    --ink:#EAE7DE; --ink-2:#98A29A; --line:#2A2F33; --line-2:#3B4248;
+    --steel:#6FA6BA; --steel-soft:#8FBECE; --steel-tint:rgba(143,190,206,.12);
+    --clay:#E2755A; --clay-tint:rgba(226,117,90,.14); --ok:#6BC177; --ok-tint:rgba(107,193,119,.14);
+    --amber:#E0A84A; --amber-tint:rgba(224,168,74,.14);
+    --shadow:0 1px 0 rgba(0,0,0,.5), 0 8px 24px -12px rgba(0,0,0,.65);
+  }
+}
+* { box-sizing:border-box; }
+html, body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.45 var(--sans); }
+body { padding:0 16px calc(32px + env(safe-area-inset-bottom)); max-width:760px; margin:0 auto; }
+h1, h2 { font-family:var(--serif); font-weight:600; margin:0; }
+h1 { font-size:24px; }
+h2 { font-size:18px; margin:22px 0 10px; }
+button { font:inherit; border-radius:10px; border:1px solid var(--line-2); background:var(--paper-2);
+         color:var(--ink); padding:9px 14px; cursor:pointer; min-height:42px; }
+button:disabled { opacity:.5; cursor:default; }
+button.primary { background:var(--steel); border-color:var(--steel); color:#fff; }
+button.danger { background:var(--clay); border-color:var(--clay); color:#fff; }
+input { font:inherit; color:var(--ink); background:var(--paper); border:1px solid var(--line-2);
+        border-radius:10px; padding:9px 10px; min-height:42px; }
+.muted { color:var(--ink-2); }
+.small { font-size:13px; }
+.card { background:var(--paper-2); border:1px solid var(--line); border-radius:14px; padding:14px; box-shadow:var(--shadow); }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.spacer { flex:1; }
+.pill { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:3px 10px;
+        font-size:13px; border:1px solid var(--line-2); background:var(--paper); white-space:nowrap; }
+.dot { width:9px; height:9px; border-radius:50%; background:var(--ink-2); flex:none; }
+.dot.ok { background:var(--ok); } .dot.bad { background:var(--clay); } .dot.wait { background:var(--amber); }
+.pill.warn { background:var(--amber-tint); border-color:transparent; color:var(--amber); }
+.pill.bad { background:var(--clay-tint); border-color:transparent; color:var(--clay); }
+
+header { position:sticky; top:0; z-index:5; background:var(--paper); padding:14px 0 10px;
+         border-bottom:1px solid var(--line); margin-bottom:12px; }
+#banners > div { border-radius:12px; padding:10px 12px; margin:8px 0; }
+.banner-crit { background:var(--clay-tint); color:var(--clay); }
+.banner-warn { background:var(--amber-tint); color:var(--amber); }
+.banner-info { background:var(--steel-tint); color:var(--steel); }
+.banner-crit button, .banner-warn button { min-height:32px; padding:4px 10px; margin-left:8px; }
+
+.weather { display:grid; grid-template-columns:repeat(auto-fit, minmax(96px,1fr)); gap:10px; }
+.weather .v { font-family:var(--serif); font-size:22px; }
+.devices { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:10px; }
+.devices .card { padding:10px 12px; }
+
+.block { margin-top:6px; }
+.block h3 { font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); margin:16px 0 8px; font-weight:600; }
+.zone { margin-bottom:10px; }
+.zone.watering { border-color:var(--steel); background:var(--steel-tint); }
+.zone .name { font-weight:600; }
+.zone .state { font-family:var(--mono); font-size:14px; }
+.zone .actions { margin-top:10px; }
+.zone .actions input { width:82px; }
+.zone .cmd { margin-top:8px; font-size:13px; }
+
+table { width:100%; border-collapse:collapse; font-size:14px; }
+td { padding:7px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+.status-done { color:var(--ok); } .status-running, .status-sent, .status-pending { color:var(--steel); }
+.status-rejected, .status-failed, .status-expired { color:var(--clay); }
+
+#login { max-width:360px; margin:18vh auto 0; }
+#login input { width:100%; margin:12px 0; }
+.hidden { display:none !important; }
+footer { margin-top:28px; }
+</style>
+</head>
+<body>
+
+<section id="login" class="hidden">
+  <h1>Roseberry Irrigation</h1>
+  <p class="muted">Sign in with the farm password (the same one as the planner).</p>
+  <form id="loginForm">
+    <input id="password" type="password" autocomplete="current-password" placeholder="Farm password" required>
+    <button class="primary" type="submit" style="width:100%">Sign in</button>
+    <p id="loginError" class="small" style="color:var(--clay)"></p>
+  </form>
+</section>
+
+<main id="app" class="hidden">
+  <header>
+    <div class="row">
+      <h1>Irrigation</h1>
+      <span class="spacer"></span>
+      <span id="bridgePill" class="pill"><span class="dot"></span>Bridge</span>
+    </div>
+    <div id="modePills" class="row small" style="margin-top:8px"></div>
+  </header>
+
+  <div id="banners"></div>
+
+  <div class="row" style="margin:6px 0 4px">
+    <button id="stopAll" class="danger">Stop all</button>
+    <span class="spacer"></span>
+    <span class="small muted" id="updated"></span>
+  </div>
+
+  <h2>Zones</h2>
+  <div id="zones"></div>
+
+  <h2>Weather</h2>
+  <div id="weather" class="card"></div>
+
+  <h2>Devices</h2>
+  <div id="devices" class="devices"></div>
+
+  <h2>Recent requests</h2>
+  <div class="card"><table id="commands"></table></div>
+
+  <h2>Recent watering</h2>
+  <div class="card"><table id="events"></table></div>
+
+  <footer class="row small muted">
+    <label>Your name <input id="who" style="width:140px" placeholder="for the log"></label>
+    <span class="spacer"></span>
+    <button id="logout">Sign out</button>
+  </footer>
+</main>
+
+<script>
+const SB_URL = "https://xgvmbuqefvpmzfbywqfw.supabase.co";
+const SB_KEY = "sb_publishable_0Sjh0qMDrEYTnLGigxDkdQ_EizyMp1E";
+const FARM_EMAIL = "gday@roseberrygrowers.com.au";   // the planner's shared farm login
+const HEARTBEAT_STALE_MS = 3 * 60 * 1000;            // bridge beats every 60 s
+const DEFAULT_MINUTES = 10;
+
+const sb = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: "roseberry_irrigation_auth" } });
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtTime = d => new Date(d).toLocaleTimeString("en-AU", { hour:"numeric", minute:"2-digit" });
+const fmtDay = d => new Date(d).toLocaleDateString("en-AU", { weekday:"short", day:"numeric", month:"short" });
+const ago = d => {
+  const s = Math.round((Date.now() - new Date(d)) / 1000);
+  if (s < 90) return "just now";
+  if (s < 5400) return Math.round(s / 60) + " min ago";
+  if (s < 129600) return Math.round(s / 3600) + " h ago";
+  return fmtDay(d);
+};
+const mmss = sec => { sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); };
+
+let state = { zones: [], devices: [], commands: [], events: [], alerts: [], weather: null };
+// Minutes typed into each zone's box. Live updates redraw the zones every few seconds, so the
+// boxes are rebuilt from this rather than reset to the default under someone's thumb.
+const typedMinutes = {};
+
+// ---------------------------------------------------------------- data
+
+async function load() {
+  const since = new Date(Date.now() - 3 * 86400000).toISOString();
+  const [zones, devices, commands, events, alerts, weather] = await Promise.all([
+    sb.from("irrigation_zones").select("*").order("Order"),
+    sb.from("device_status").select("*"),
+    sb.from("irrigation_commands").select("*").gte('"Requested at"', since)
+      .order('"Requested at"', { ascending: false }).limit(25),
+    sb.from("irrigation_events").select("*").not("Zone", "is", null)
+      .order('"Started at"', { ascending: false }).limit(25),
+    sb.from("irrigation_alerts").select("*").is('"Cleared at"', null)
+      .order('"Raised at"', { ascending: false }),
+    sb.from("weather_readings").select("*").order('"Observed at"', { ascending: false }).limit(1),
+  ]);
+  for (const r of [zones, devices, commands, events, alerts, weather]) {
+    if (r.error) {
+      if (r.error.code === "PGRST301" || /JWT/i.test(r.error.message)) return showLogin();
+      throw r.error;
+    }
+  }
+  state = { zones: zones.data, devices: devices.data, commands: commands.data, events: events.data,
+            alerts: alerts.data, weather: weather.data[0] || null, loadedAt: Date.now() };
+  render();
+}
+
+let reloadTimer = null;
+function reloadSoon() {   // many realtime changes arrive together; load once
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => load().catch(showError), 400);
+}
+
+function bridge() { return state.devices.find(d => d.id === "bridge"); }
+function bridgeAlive() {
+  const b = bridge();
+  return b && b.Online && b["Last seen"] && Date.now() - new Date(b["Last seen"]) < HEARTBEAT_STALE_MS;
+}
+function controllable(controller) {
+  const c = bridge()?.Raw?.control || {};
+  return c[controller] !== false && controller in c;
+}
+
+// Watering now, per zone, from what the devices last reported.
+function wateringByZone() {
+  const out = {};
+  for (const d of state.devices) {
+    if (d.Watering && d["Active zone"]) {
+      const left = d["Remaining s"] == null ? null
+        : d["Remaining s"] - (Date.now() - new Date(d["Updated at"])) / 1000;
+      out[d["Active zone"]] = { left, pretend: d.id.startsWith("mock-") };
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- render
+
+function render() {
+  const b = bridge();
+  const alive = bridgeAlive();
+  $("bridgePill").innerHTML = `<span class="dot ${alive ? "ok" : "bad"}"></span>Bridge ${alive ? "online" : "offline"}`;
+  const pills = [];
+  if (b?.Raw?.dry_run) pills.push(`<span class="pill warn">Dry run: nothing is really started or stopped</span>`);
+  for (const p of b?.Raw?.pretend || []) pills.push(`<span class="pill">${esc(p)} is pretend</span>`);
+  $("modePills").innerHTML = pills.join("");
+
+  const banners = [];
+  if (!alive) banners.push(`<div class="banner-crit"><b>The bridge isn't checking in</b>${b?.["Last seen"] ? ` (last heard ${ago(b["Last seen"])})` : ""}. Requests will wait and then expire. Anything already watering still stops on the controller's own timer.</div>`);
+  for (const a of state.alerts) {
+    const cls = a.Severity === "critical" ? "banner-crit" : a.Severity === "warning" ? "banner-warn" : "banner-info";
+    const ack = a["Acknowledged at"] ? `<span class="small"> · seen by ${esc(a["Acknowledged by"] || "someone")}</span>`
+      : `<button data-ack="${esc(a.id)}">Seen</button>`;
+    banners.push(`<div class="${cls}">${esc(a.Message)} <span class="small">· ${ago(a["Raised at"])}</span>${ack}</div>`);
+  }
+  $("banners").innerHTML = banners.join("");
+
+  // Don't rebuild the zones while someone is typing a run time; catch up when they leave the box.
+  if (document.activeElement?.id?.startsWith("min-")) zonesStale = true;
+  else renderZones();
+  renderWeather();
+  renderDevices();
+  renderCommands();
+  renderEvents();
+  $("updated").textContent = "Updated " + fmtTime(state.loadedAt);
+  $("stopAll").disabled = !alive;
+}
+
+let zonesStale = false;
+document.addEventListener("input", e => {
+  if (e.target.id?.startsWith("min-")) typedMinutes[e.target.id.slice(4)] = e.target.value;
+});
+document.addEventListener("focusout", e => {
+  if (e.target.id?.startsWith("min-") && zonesStale) {
+    zonesStale = false;
+    // Let a tap on that zone's Start button land before the cards are rebuilt.
+    setTimeout(() => { if (!document.activeElement?.id?.startsWith("min-")) renderZones(); }, 250);
+  }
+});
+
+function openCommandFor(zoneId) {
+  return state.commands.find(c => c.Zone === zoneId && ["pending", "sent", "running"].includes(c.Status));
+}
+
+function renderZones() {
+  const watering = wateringByZone();
+  const lastRun = {};
+  for (const e of state.events) if (!lastRun[e.Zone]) lastRun[e.Zone] = e;
+  const farmMax = bridge()?.Raw?.max_run_minutes || 120;
+  const alive = bridgeAlive();
+
+  const OTHER = "Greenhouses & nursery";
+  const groups = new Map();
+  for (const z of state.zones) {
+    if (!z.Controller) continue;   // not linked to a valve: nothing to control here
+    const g = z.Block ? "Block " + z.Block : OTHER;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(z);
+  }
+  if (groups.has(OTHER)) { const rest = groups.get(OTHER); groups.delete(OTHER); groups.set(OTHER, rest); }
+
+  let html = "";
+  for (const [g, zones] of groups) {
+    html += `<div class="block"><h3>${esc(g)}</h3>`;
+    for (const z of zones) {
+      const w = watering[z.id];
+      const cap = Math.min(z["Max minutes"] || 0, farmMax);
+      const outlet = z.Controller === "Rain Bird" ? `station ${z.Station}` : "valve";
+      const canControl = controllable(z.Controller) && cap > 0;
+      const open = openCommandFor(z.id);
+      const last = lastRun[z.id];
+      const stateText = w ? `Watering${w.left != null ? " · " + mmss(w.left) + " left" : ""}` : "Idle";
+
+      let actions;
+      if (!canControl) {
+        actions = `<span class="pill">${controllable(z.Controller) ? "No Max minutes set" : "Watch only for now"}</span>`;
+      } else if (w) {
+        actions = `<button class="danger" data-stop="${esc(z.id)}" ${alive ? "" : "disabled"}>Stop</button>`;
+      } else {
+        actions = `<input type="number" inputmode="numeric" min="1" max="${cap}" value="${esc(typedMinutes[z.id] ?? Math.min(DEFAULT_MINUTES, cap))}" id="min-${esc(z.id)}" aria-label="Minutes">
+                   <span class="small muted">min (max ${cap})</span>
+                   <button class="primary" data-start="${esc(z.id)}" ${alive && !open ? "" : "disabled"}>Start</button>`;
+      }
+      html += `<div class="card zone ${w ? "watering" : ""}" data-zone="${esc(z.id)}">
+        <div class="row"><span class="name">${esc(z.Name)}</span><span class="spacer"></span>
+          <span class="state" data-left="${w && w.left != null ? Date.now() + w.left * 1000 : ""}">${esc(stateText)}</span></div>
+        <div class="small muted">${esc(z.Controller)} ${esc(outlet)}${last ? ` · last ran ${ago(last["Started at"] || last["Created at"])} for ${last.Minutes} min` : ""}</div>
+        ${open ? `<div class="cmd status-${esc(open.Status)}">${esc(describeCommand(open))}</div>` : ""}
+        <div class="row actions">${actions}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  $("zones").innerHTML = html || `<p class="muted">No zones are linked to a controller yet.</p>`;
+}
+
+function describeCommand(c) {
+  const what = c.Action === "start" ? `Start for ${c.Minutes} min` : c.Action === "stop" ? "Stop"
+    : c.Action === "stop_all" ? "Stop all" : `Rain delay ${c.Days} day(s)`;
+  const words = { pending: "waiting for the bridge", sent: "being sent", running: "running",
+                  done: "done", failed: "failed", rejected: "refused", expired: "expired" };
+  return `${what}: ${words[c.Status] || c.Status}${c.Result && c.Status !== "pending" ? " · " + c.Result : ""}`;
+}
+
+function renderWeather() {
+  const w = state.weather;
+  if (!w) { $("weather").innerHTML = `<p class="muted">No readings yet.</p>`; return; }
+  const v = (x, unit, dp = 1) => x == null ? "–" : `${Number(x).toFixed(dp)}<span class="small muted"> ${unit}</span>`;
+  $("weather").innerHTML = `
+    <div class="weather">
+      <div><div class="small muted">Temperature</div><div class="v">${v(w["Temp C"], "°C")}</div></div>
+      <div><div class="small muted">Humidity</div><div class="v">${v(w["RH pct"], "%", 0)}</div></div>
+      <div><div class="small muted">Wind</div><div class="v">${v(w["Wind m/s"] == null ? null : w["Wind m/s"] * 3.6, "km/h", 0)}</div></div>
+      <div><div class="small muted">Gusts</div><div class="v">${v(w["Wind gust m/s"] == null ? null : w["Wind gust m/s"] * 3.6, "km/h", 0)}</div></div>
+      <div><div class="small muted">Rain today</div><div class="v">${v(w["Rain day mm"], "mm")}</div></div>
+      <div><div class="small muted">Sun</div><div class="v">${v(w["Solar W/m2"], "W/m²", 0)}</div></div>
+    </div>
+    <p class="small muted" style="margin:10px 0 0">Reading from ${fmtTime(w["Observed at"])} (${ago(w["Observed at"])})${w["Rain rate mm/hr"] > 0 ? ` · raining ${w["Rain rate mm/hr"]} mm/hr` : ""}</p>`;
+}
+
+function renderDevices() {
+  const order = ["bridge", "rainbird", "linktap-gw", "ecowitt"];
+  const rank = d => { const id = d.id.replace(/^mock-/, ""); const i = order.indexOf(id); return i < 0 ? 10 : i; };
+  const devs = [...state.devices].sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
+  $("devices").innerHTML = devs.map(d => {
+    const stale = d.id === "bridge" ? !bridgeAlive() : false;
+    const ok = d.Online && !stale;
+    const bits = [];
+    if (d["Battery pct"] != null) bits.push(`battery ${d["Battery pct"]}%`);
+    if (d["Signal pct"] != null) bits.push(`signal ${d["Signal pct"]}%`);
+    if (d.Error && d.id !== "bridge") bits.push(esc(d.Error));
+    bits.push(d["Last seen"] ? "seen " + ago(d["Last seen"]) : "not seen yet");
+    return `<div class="card"><div class="row"><span class="dot ${ok ? "ok" : "bad"}"></span><b>${esc(d.Name || d.id)}</b></div>
+            <div class="small muted">${bits.join(" · ")}</div></div>`;
+  }).join("");
+}
+
+function zoneName(id) { return state.zones.find(z => z.id === id)?.Name || ""; }
+
+function renderCommands() {
+  $("commands").innerHTML = state.commands.length ? state.commands.map(c => `<tr>
+      <td class="small muted" style="white-space:nowrap">${fmtTime(c["Requested at"])}</td>
+      <td>${esc(zoneName(c.Zone) || (c.Action === "stop_all" ? "All zones" : ""))}<div class="small status-${esc(c.Status)}">${esc(describeCommand(c))}</div></td>
+      <td class="small muted">${esc(c["Requested by"] || "")}</td></tr>`).join("")
+    : `<tr><td class="muted">No requests in the last 3 days.</td></tr>`;
+}
+
+function renderEvents() {
+  $("events").innerHTML = state.events.length ? state.events.map(e => `<tr>
+      <td class="small muted" style="white-space:nowrap">${fmtDay(e["Started at"] || e.Date)}<br>${e["Started at"] ? fmtTime(e["Started at"]) : ""}</td>
+      <td>${esc(zoneName(e.Zone))}<div class="small muted">${e.Minutes} min${e.Source === "bridge-observed" ? " · started by the controller" : ""}${e.By ? " · " + esc(e.By) : ""}</div></td></tr>`).join("")
+    : `<tr><td class="muted">No runs recorded by the bridge yet.</td></tr>`;
+}
+
+// Count down "time left" between reloads.
+setInterval(() => {
+  for (const el of document.querySelectorAll(".state[data-left]")) {
+    const end = Number(el.dataset.left);
+    if (end) el.textContent = "Watering · " + mmss((end - Date.now()) / 1000) + " left";
+  }
+}, 1000);
+
+// ---------------------------------------------------------------- actions
+
+function who() { return ($("who").value || "").trim() || "app"; }
+
+async function request(fields) {
+  const { error } = await sb.from("irrigation_commands").insert({ ...fields, "Requested by": who() });
+  if (error) { alert("Couldn't send that request:\n" + error.message); return; }
+  await load();
+}
+
+document.addEventListener("click", async e => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.dataset.start) {
+    const z = state.zones.find(z => z.id === t.dataset.start);
+    const minutes = Number($("min-" + z.id).value);
+    const cap = Math.min(z["Max minutes"] || 0, bridge()?.Raw?.max_run_minutes || 120);
+    if (!(minutes > 0 && minutes <= cap)) { alert(`Enter between 1 and ${cap} minutes.`); return; }
+    t.disabled = true;
+    await request({ Zone: z.id, Action: "start", Minutes: minutes });
+  } else if (t.dataset.stop) {
+    t.disabled = true;
+    await request({ Zone: t.dataset.stop, Action: "stop" });
+  } else if (t.dataset.ack) {
+    t.disabled = true;
+    const { error } = await sb.from("irrigation_alerts")
+      .update({ "Acknowledged by": who(), "Acknowledged at": new Date().toISOString() }).eq("id", t.dataset.ack);
+    if (error) alert(error.message);
+    await load();
+  } else if (t.id === "stopAll") {
+    if (!confirm("Stop every zone now?")) return;
+    t.disabled = true;
+    await request({ Action: "stop_all" });
+  } else if (t.id === "logout") {
+    await sb.auth.signOut();
+    showLogin();
+  }
+});
+
+// ---------------------------------------------------------------- login, start-up
+
+function showLogin() {
+  $("app").classList.add("hidden");
+  $("login").classList.remove("hidden");
+  $("password").focus();
+}
+
+function showError(err) {
+  console.error(err);
+  $("updated").textContent = "Couldn't refresh: " + (err.message || err);
+}
+
+let channel = null;
+async function startApp() {
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  try { $("who").value = localStorage.getItem("irrigation_who") || ""; } catch {}
+  await load();
+  if (!channel) {
+    channel = sb.channel("irrigation");
+    for (const table of ["device_status", "irrigation_commands", "irrigation_events", "irrigation_alerts", "weather_readings", "irrigation_zones"]) {
+      channel.on("postgres_changes", { event: "*", schema: "public", table }, reloadSoon);
+    }
+    channel.subscribe();
+  }
+}
+
+$("who").addEventListener("change", () => { try { localStorage.setItem("irrigation_who", $("who").value.trim()); } catch {} });
+
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("loginError").textContent = "";
+  const { error } = await sb.auth.signInWithPassword({ email: FARM_EMAIL, password: $("password").value });
+  if (error) { $("loginError").textContent = error.message; return; }
+  $("password").value = "";
+  startApp().catch(showError);
+});
+
+// Belt and braces under realtime: refresh every minute, and whenever the app comes back on screen.
+setInterval(() => { if (!document.hidden && !$("app").classList.contains("hidden")) load().catch(showError); }, 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("app").classList.contains("hidden")) load().catch(showError); });
+
+sb.auth.getSession().then(({ data }) => data.session ? startApp().catch(showError) : showLogin());
+</script>
+</body>
+</html>

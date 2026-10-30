@@ -1,0 +1,14 @@
+{
+  "name": "Roseberry Irrigation",
+  "short_name": "Irrigation",
+  "description": "Start, stop and watch the irrigation at Roseberry Growers.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F5EF",
+  "theme_color": "#1F4E5F",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
