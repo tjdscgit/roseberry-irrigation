@@ -228,6 +228,15 @@ function wateringByZone() {
       out[d["Active zone"]] = { left, pretend: d.id.startsWith("mock-") };
     }
   }
+  // A run the bridge started and confirmed counts as watering straight away, with time
+  // left worked out from when it started (the Rain Bird doesn't report time left).
+  for (const c of state.commands) {
+    if (c.Action !== "start" || c.Status !== "running" || !c["Started at"]) continue;
+    const left = c.Minutes * 60 - (Date.now() - new Date(c["Started at"])) / 1000;
+    const known = out[c.Zone];
+    if (!known) out[c.Zone] = { left: Math.max(0, left) };
+    else if (known.left == null) known.left = Math.max(0, left);
+  }
   return out;
 }
 
@@ -313,6 +322,8 @@ function renderZones() {
         actions = `<span class="pill">${controllable(z.Controller) ? "No Max minutes set" : "Watch only for now"}</span>`;
       } else if (w) {
         actions = `<button class="danger" data-stop="${esc(z.id)}" ${alive ? "" : "disabled"}>Stop</button>`;
+      } else if (open) {
+        actions = "";   // a start or stop is on its way; its progress shows above
       } else {
         actions = `<input type="number" inputmode="numeric" min="1" max="${cap}" value="${esc(typedMinutes[z.id] ?? Math.min(DEFAULT_MINUTES, cap))}" id="min-${esc(z.id)}" aria-label="Minutes">
                    <span class="small muted">min (max ${cap})</span>
