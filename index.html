@@ -284,6 +284,11 @@ document.addEventListener("focusout", e => {
   }
 });
 
+function stopping(zoneId) {
+  return state.commands.some(c => ["pending", "sent"].includes(c.Status) &&
+    (c.Action === "stop_all" || (c.Action === "stop" && c.Zone === zoneId)));
+}
+
 function openCommandFor(zoneId) {
   return state.commands.find(c => c.Zone === zoneId && ["pending", "sent", "running"].includes(c.Status));
 }
@@ -320,6 +325,8 @@ function renderZones() {
       let actions;
       if (!canControl) {
         actions = `<span class="pill">${controllable(z.Controller) ? "No Max minutes set" : "Watch only for now"}</span>`;
+      } else if (w && stopping(z.id)) {
+        actions = `<span class="pill">Stopping…</span>`;   // one Stop is enough; no second button to tap
       } else if (w) {
         actions = `<button class="danger" data-stop="${esc(z.id)}" ${alive ? "" : "disabled"}>Stop</button>`;
       } else if (open) {
@@ -430,6 +437,7 @@ document.addEventListener("click", async e => {
     await request({ Zone: z.id, Action: "start", Minutes: minutes });
   } else if (t.dataset.stop) {
     t.disabled = true;
+    if (stopping(t.dataset.stop)) return;   // already on its way
     await request({ Zone: t.dataset.stop, Action: "stop" });
   } else if (t.dataset.ack) {
     t.disabled = true;
