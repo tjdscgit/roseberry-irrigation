@@ -118,6 +118,7 @@ footer { margin-top:28px; }
       <span id="bridgePill" class="pill"><span class="dot"></span>Bridge</span>
     </div>
     <div id="modePills" class="row small" style="margin-top:8px"></div>
+    <div id="nowWatering" class="row small" style="margin-top:8px"></div>
   </header>
 
   <div id="banners"></div>
@@ -234,10 +235,16 @@ function wateringByZone() {
     if (c.Action !== "start" || c.Status !== "running" || !c["Started at"]) continue;
     const left = c.Minutes * 60 - (Date.now() - new Date(c["Started at"])) / 1000;
     const known = out[c.Zone];
-    if (!known) out[c.Zone] = { left: Math.max(0, left) };
-    else if (known.left == null) known.left = Math.max(0, left);
+    if (!known) out[c.Zone] = { left: Math.max(0, left), byApp: true };
+    else { known.byApp = true; if (known.left == null) known.left = Math.max(0, left); }
   }
   return out;
+}
+
+// Who started a run: the app, or the controller's own program/schedule.
+function startedBy(zone, w) {
+  if (w.byApp) return "";
+  return zone.Controller === "Rain Bird" ? "Rain Bird program" : "LinkTap schedule";
 }
 
 // ---------------------------------------------------------------- render
@@ -250,6 +257,15 @@ function render() {
   if (b?.Raw?.dry_run) pills.push(`<span class="pill warn">Dry run: nothing is really started or stopped</span>`);
   for (const p of b?.Raw?.pretend || []) pills.push(`<span class="pill">${esc(p)} is pretend</span>`);
   $("modePills").innerHTML = pills.join("");
+
+  const watering = wateringByZone();
+  const now = state.zones.filter(z => watering[z.id]).map(z => {
+    const by = startedBy(z, watering[z.id]);
+    return `<span class="pill" style="background:var(--steel-tint);border-color:transparent;color:var(--steel)">
+      <span class="dot ok"></span>${esc(z.Name)}${by ? " · " + esc(by) : ""}</span>`;
+  });
+  $("nowWatering").innerHTML = now.length ? `<span class="muted">Watering now:</span> ${now.join("")}`
+                                          : `<span class="muted">Nothing watering</span>`;
 
   const banners = [];
   if (!alive) banners.push(`<div class="banner-crit"><b>The bridge isn't checking in</b>${b?.["Last seen"] ? ` (last heard ${ago(b["Last seen"])})` : ""}. Requests will wait and then expire. Anything already watering still stops on the controller's own timer.</div>`);
@@ -320,7 +336,9 @@ function renderZones() {
       const canControl = controllable(z.Controller) && cap > 0;
       const open = openCommandFor(z.id);
       const last = lastRun[z.id];
-      const stateText = w ? `Watering${w.left != null ? " · " + mmss(w.left) + " left" : ""}` : "Idle";
+      const by = w ? startedBy(z, w) : "";
+      const prefix = "Watering" + (by ? " · " + by : "");
+      const stateText = w ? `${prefix}${w.left != null ? " · " + mmss(w.left) + " left" : ""}` : "Idle";
 
       let actions;
       if (!canControl) {
@@ -338,7 +356,7 @@ function renderZones() {
       }
       html += `<div class="card zone ${w ? "watering" : ""}" data-zone="${esc(z.id)}">
         <div class="row"><span class="name">${esc(z.Name)}</span><span class="spacer"></span>
-          <span class="state" data-left="${w && w.left != null ? Date.now() + w.left * 1000 : ""}">${esc(stateText)}</span></div>
+          <span class="state" data-prefix="${esc(prefix)}" data-left="${w && w.left != null ? Date.now() + w.left * 1000 : ""}">${esc(stateText)}</span></div>
         <div class="small muted">${esc(z.Controller)} ${esc(outlet)}${last ? ` · last ran ${ago(last["Started at"] || last["Created at"])} for ${last.Minutes} min` : ""}</div>
         ${open ? `<div class="cmd status-${esc(open.Status)}">${esc(describeCommand(open))}</div>` : ""}
         <div class="row actions">${actions}</div>
@@ -411,7 +429,7 @@ function renderEvents() {
 setInterval(() => {
   for (const el of document.querySelectorAll(".state[data-left]")) {
     const end = Number(el.dataset.left);
-    if (end) el.textContent = "Watering · " + mmss((end - Date.now()) / 1000) + " left";
+    if (end) el.textContent = el.dataset.prefix + " · " + mmss((end - Date.now()) / 1000) + " left";
   }
 }, 1000);
 
