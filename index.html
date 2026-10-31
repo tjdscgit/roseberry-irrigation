@@ -400,7 +400,11 @@ function renderDevices() {
     const ok = d.Online && !stale;
     const bits = [];
     if (d["Battery pct"] != null) bits.push(`battery ${d["Battery pct"]}%`);
-    if (d["Signal pct"] != null) bits.push(`signal ${d["Signal pct"]}%`);
+    const rssi = d.Raw?.rssi_dbm;
+    if (rssi != null) {
+      const words = rssi >= -60 ? "good" : rssi >= -70 ? "fair" : rssi >= -80 ? "weak" : "very weak";
+      bits.push(`WiFi ${rssi} dBm (${words})`);
+    } else if (d["Signal pct"] != null) bits.push(`signal ${d["Signal pct"]}%`);
     if (d.Error && d.id !== "bridge") bits.push(esc(d.Error));
     bits.push(d["Last seen"] ? "seen " + ago(d["Last seen"]) : "not seen yet");
     return `<div class="card"><div class="row"><span class="dot ${ok ? "ok" : "bad"}"></span><b>${esc(d.Name || d.id)}</b></div>
