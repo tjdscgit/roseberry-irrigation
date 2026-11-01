@@ -20,7 +20,7 @@
 -->
 <style>
 :root {
-  --ground:#F4F5F1; --card:#FFFFFF; --soft:#ECEEEA; --line:#DDE1DA; --line-2:#C9CFC6;
+  --rain:#7FA9D1; --ground:#F4F5F1; --card:#FFFFFF; --soft:#ECEEEA; --line:#DDE1DA; --line-2:#C9CFC6;
   --ink:#1B2420; --ink-2:#3F4A45; --muted:#5A6660;
   --blue:#1F5F99; --blue-ink:#174A78; --blue-tint:#E8EEF5; --on-blue:#FFFFFF;
   --ok:#1E5E38; --ok-dot:#2E7D4F; --ok-tint:#E3F0E7;
@@ -93,7 +93,15 @@ header.top { padding:20px 0 4px; }
 .tile { background:var(--card); border-radius:12px; padding:12px; }
 .tile .v { font-size:20px; font-weight:700; }
 
-.zonecard { background:var(--card); border-radius:14px; padding:12px 14px; margin-top:8px; }
+.zonecard { background:var(--card); border-radius:14px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; }
+.chips { display:flex; gap:8px; flex-wrap:wrap; margin:4px 0 12px; }
+.chips button { min-height:36px; padding:0 12px; border-radius:999px; background:var(--card); color:var(--ink); font-size:13px; font-weight:500; }
+.chips button.on { background:var(--ink); color:var(--ground); font-weight:600; }
+.wbar { display:flex; height:10px; border-radius:5px; overflow:hidden; background:var(--soft); }
+.wbar i { display:block; }
+.legend { display:flex; gap:16px; margin:10px 4px; color:var(--ink-2); align-items:center; }
+.legend i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-1px; }
+.runrow { display:flex; justify-content:space-between; gap:10px; font-size:14px; }
 .zonecard.watering { outline:2px solid var(--blue); }
 .zonecard input[type=number] { width:80px; }
 .block-h { font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600; margin:18px 0 0; }
@@ -248,12 +256,11 @@ nav.tabs svg { width:22px; height:22px; }
 
   <!-- ============================================================ Zones -->
   <div id="tab-zones" class="wrap hidden">
-    <header class="top"><h1>Zones</h1><span class="small muted">Start or stop any zone. Runs are capped at each zone's maximum.</span></header>
-    <div id="zones"></div>
-    <section class="card">
-      <h2>Recent runs</h2>
-      <table id="events" style="margin-top:8px"></table>
-    </section>
+    <header class="top"><h1>Zones</h1><span class="small muted">Water over the last 7 days: rain + irrigation</span></header>
+    <div class="chips" id="zoneChips"></div>
+    <div id="zones" class="stack" style="gap:8px"></div>
+    <div class="legend small"><span><i style="background:var(--rain)"></i>Rain</span><span><i style="background:var(--blue)"></i>Irrigation</span><span class="muted">Full bar = 25 mm</span></div>
+    <section class="card stack" style="gap:8px"><h2>Recent runs</h2><div id="zoneRecent" class="stack" style="gap:8px"></div></section>
   </div>
 
   <!-- ============================================================ Health -->
@@ -317,7 +324,7 @@ let editing = null;   // program being edited (a copy), or null
 
 async function load() {
   const since = new Date(Date.now() - 3 * 86400000).toISOString();
-  const [zones, devices, commands, events, alerts, weather, programs] = await Promise.all([
+  const [zones, devices, commands, events, alerts, weather, programs, week, rainWeek] = await Promise.all([
     sb.from("irrigation_zones").select("*").order("Order"),
     sb.from("device_status").select("*"),
     sb.from("irrigation_commands").select("*").gte('"Requested at"', since)
@@ -328,6 +335,10 @@ async function load() {
       .order('"Raised at"', { ascending: false }),
     sb.from("weather_readings").select("*").order('"Observed at"', { ascending: false }).limit(1),
     sb.from("irrigation_programs").select("*").order("Name"),
+    sb.from("irrigation_events").select('"Zone","Minutes","Started at"').not("Zone", "is", null)
+      .gte('"Started at"', new Date(Date.now() - 7 * 86400000).toISOString()).limit(1000),
+    sb.from("weather_readings").select('"Observed at","Rain day mm"')
+      .gte('"Observed at"', new Date(Date.now() - 7 * 86400000).toISOString()).limit(2000),
   ]);
   for (const r of [zones, devices, commands, events, alerts, weather]) {
     if (r.error) {
@@ -339,7 +350,7 @@ async function load() {
   const programsMissing = !!programs.error;
   state = { zones: zones.data, devices: devices.data, commands: commands.data, events: events.data,
             alerts: alerts.data, weather: weather.data[0] || null, programs: programs.data || [],
-            programsMissing, loadedAt: Date.now() };
+            programsMissing, week: week.data || [], rain7: rainLastWeek(rainWeek.data || []), loadedAt: Date.now() };
   render();
 }
 
@@ -668,50 +679,86 @@ function openCommandFor(zoneId) {
   return state.commands.find(c => c.Zone === zoneId && ["pending", "sent", "running"].includes(c.Status));
 }
 
+// 7-day rain: the station's daily total, taken at its highest for each farm day.
+function rainLastWeek(rows) {
+  const byDay = {};
+  for (const r of rows) {
+    const day = new Date(r["Observed at"]).toLocaleDateString("en-CA", { timeZone: FARM_TZ });
+    byDay[day] = Math.max(byDay[day] || 0, Number(r["Rain day mm"]) || 0);
+  }
+  return Object.values(byDay).reduce((a, b) => a + b, 0);
+}
+// mm per hour: measured if known, else worked out from heads x flow over the area.
+function zoneRate(z) {
+  if (z["Measured precipitation mm/hr"]) return Number(z["Measured precipitation mm/hr"]);
+  const area = (z["Area width m"] || 0) * (z["Area length m"] || 0);
+  return area && z.Heads && z["Head flow L/hr"] ? z.Heads * z["Head flow L/hr"] / area : null;
+}
+function zoneKind(z) {
+  if (/nursery/i.test(z.Name)) return "Nursery";
+  return z.Block && !/tunnel|greenhouse/i.test(z.Name) ? "Field" : "Greenhouses";
+}
+const ZONE_FILTERS = ["All", "Field", "Greenhouses", "Nursery"];
+const FULL_BAR_MM = 25;
+let zoneFilter = "All";
+let waterOpen = null;   // zone whose "Water…" row is open
+
 function renderZones() {
   const watering = wateringByZone();
+  const alive = bridgeAlive();
+  $("zoneChips").innerHTML = ZONE_FILTERS.map(f => `<button data-zfilter="${f}" class="${f === zoneFilter ? "on" : ""}">${f}</button>`).join("");
+  const mins = {};
+  for (const e of state.week || []) mins[e.Zone] = (mins[e.Zone] || 0) + Number(e.Minutes || 0);
   const lastRun = {};
   for (const e of state.events) if (!lastRun[e.Zone]) lastRun[e.Zone] = e;
-  const alive = bridgeAlive();
-  const OTHER = "Greenhouses & nursery";
-  const groups = new Map();
-  for (const z of state.zones) {
-    if (!z.Controller) continue;
-    const g = z.Block ? "Block " + z.Block : OTHER;
-    if (!groups.has(g)) groups.set(g, []);
-    groups.get(g).push(z);
-  }
-  if (groups.has(OTHER)) { const rest = groups.get(OTHER); groups.delete(OTHER); groups.set(OTHER, rest); }
+  const rain7 = state.rain7 || 0;
 
-  let html = "";
-  for (const [g, zones] of groups) {
-    html += `<div class="block-h">${esc(g)}</div>`;
-    for (const z of zones) {
-      const w = watering[z.id];
-      const cap = Math.min(z["Max minutes"] || 0, farmMax());
-      const outlet = z.Controller === "Rain Bird" ? `station ${z.Station}` : "valve";
-      const canControl = controllable(z.Controller) && cap > 0;
-      const open = openCommandFor(z.id);
-      const last = lastRun[z.id];
-      const by = w ? startedBy(z, w) : "";
+  const zones = state.zones.filter(z => z.Controller && (zoneFilter === "All" || zoneKind(z) === zoneFilter));
+  $("zones").innerHTML = zones.map(z => {
+    const w = watering[z.id];
+    const cap = Math.min(z["Max minutes"] || 0, farmMax());
+    const canControl = controllable(z.Controller) && cap > 0;
+    const open = openCommandFor(z.id);
+    const last = lastRun[z.id];
+    const rate = zoneRate(z);
+    const rain = z["Ignore rain"] ? 0 : rain7;
+    const irr = rate ? (mins[z.id] || 0) / 60 * rate : null;
+    const pct = v => Math.min(100, v / FULL_BAR_MM * 100);
+    const rainW = pct(rain), irrW = irr == null ? 0 : Math.min(100 - rainW, pct(irr));
+    const got = (z["Ignore rain"] ? "Under cover · " : `${rain.toFixed(0)} mm rain + `)
+      + (irr == null ? `${Math.round(mins[z.id] || 0)} min irrigation` : `${irr.toFixed(0)} mm irrigation`);
+
+    let sub, right;
+    if (w) {
+      const by = startedBy(z, w);
       const prefix = "Watering" + (by ? " · " + by : "");
-      let actions;
-      if (!canControl) actions = `<span class="pill">${controllable(z.Controller) ? "No Max minutes set" : "Watch only for now"}</span>`;
-      else if (w && stopping(z.id)) actions = `<span class="pill">Stopping…</span>`;
-      else if (w) actions = `<button class="danger" data-stop="${esc(z.id)}" ${alive ? "" : "disabled"}>Stop</button>`;
-      else if (open) actions = "";
-      else actions = `<input type="number" inputmode="numeric" min="1" max="${cap}" value="${esc(typedMinutes[z.id] ?? Math.min(DEFAULT_MINUTES, cap))}" id="min-${esc(z.id)}" aria-label="Minutes for ${esc(z.Name)}">
-                   <span class="small muted">min (max ${cap})</span><span class="spacer"></span>
-                   <button class="primary" data-start="${esc(z.id)}" ${alive ? "" : "disabled"}>Water</button>`;
-      html += `<div class="zonecard ${w ? "watering" : ""}">
-        <div class="between"><span><b>${esc(z.Name)}</b>${z["Ignore rain"] ? ' <span class="pill">under cover</span>' : ""}</span>
-          <span class="small ${w ? "blue-t" : "muted"} zstate" data-prefix="${esc(prefix)}" data-left="${w && w.left != null ? Date.now() + w.left * 1000 : ""}" style="font-weight:600">${w ? esc(prefix) + (w.left != null ? " · " + mmss(w.left) + " left" : "") : "Idle"}</span></div>
-        <div class="small muted">${esc(z.Controller)} ${esc(outlet)}${last ? ` · last ran ${ago(last["Started at"] || last["Created at"])} for ${last.Minutes} min` : ""}</div>
-        ${open ? `<div class="small status-${esc(open.Status)}" style="margin-top:6px">${esc(describeCommand(open))}</div>` : ""}
-        <div class="row" style="margin-top:10px">${actions}${w ? "" : `<button class="plain" data-zedit="${esc(z.id)}">Edit</button>`}</div></div>`;
+      sub = `<span class="blue-t zstate" style="font-weight:600" data-prefix="${esc(prefix)}" data-left="${w.left != null ? Date.now() + w.left * 1000 : ""}">${esc(prefix)}${w.left != null ? " · " + mmss(w.left) + " left" : ""}</span>`;
+      right = stopping(z.id) ? `<span class="pill">Stopping…</span>` : `<button class="danger" data-stop="${esc(z.id)}" ${alive ? "" : "disabled"}>Stop</button>`;
+    } else {
+      sub = last ? `Last ran ${ago(last["Started at"] || last["Created at"])} for ${last.Minutes} min`
+        : (z.Controller === "Rain Bird" ? `Rain Bird station ${z.Station}` : "LinkTap");
+      right = !canControl ? `<span class="pill">${controllable(z.Controller) ? "No max set" : "Watch only"}</span>`
+        : open ? "" : `<button data-wateropen="${esc(z.id)}">${waterOpen === z.id ? "Close" : "Water…"}</button>`;
     }
-  }
-  $("zones").innerHTML = html || `<p class="muted">No zones are linked to a controller yet.</p>`;
+    const waterRow = !w && !open && canControl && waterOpen === z.id
+      ? `<div class="row"><input type="number" inputmode="numeric" min="1" max="${cap}" value="${esc(typedMinutes[z.id] ?? Math.min(DEFAULT_MINUTES, cap))}" id="min-${esc(z.id)}" aria-label="Minutes for ${esc(z.Name)}">
+           <span class="small muted">min (max ${cap})</span><span class="spacer"></span>
+           <button class="primary" data-start="${esc(z.id)}" ${alive ? "" : "disabled"}>Start</button></div>` : "";
+    return `<div class="zonecard ${w ? "watering" : ""}">
+      <div class="between"><div style="display:flex;flex-direction:column;min-width:0"><span><b>${esc(z.Name)}</b>${z["Ignore rain"] ? ' <span class="pill" style="padding:2px 8px">under cover</span>' : ""}</span>
+        <span class="small muted">${sub}</span></div>
+        <div class="row" style="gap:6px;flex-wrap:nowrap">${right}${w ? "" : `<button class="plain" data-zedit="${esc(z.id)}" aria-label="Edit ${esc(z.Name)}">Edit</button>`}</div></div>
+      ${open ? `<div class="small status-${esc(open.Status)}">${esc(describeCommand(open))}</div>` : ""}
+      ${waterRow}
+      <div class="wbar" aria-hidden="true"><i style="width:${rainW}%;background:var(--rain)"></i><i style="width:${irrW}%;background:var(--blue)"></i></div>
+      <div class="small" style="color:var(--ink-2)">${esc(got)}${irr != null && !z["Measured precipitation mm/hr"] ? ' <span class="muted">(estimated)</span>' : ""}</div>
+    </div>`;
+  }).join("") || `<p class="muted">No zones here.</p>`;
+
+  $("zoneRecent").innerHTML = state.events.slice(0, 10).map(e => `<div class="runrow">
+      <span>${esc(shortZone(e.Zone))} · ${e.Minutes} min</span>
+      <span class="muted">${e["Started at"] ? fmtTime(e["Started at"]) : ""}${e.By ? " · " + esc(String(e.By).replace(/^program: /, "").replace(/ \(\d+\/\d+\)$/, "")) : e.Source === "bridge-observed" ? " · controller" : ""}</span></div>`).join("")
+    || `<span class="muted small">No runs recorded yet.</span>`;
 }
 
 function describeCommand(c) {
@@ -725,6 +772,7 @@ function describeCommand(c) {
 }
 
 function renderEvents() {
+  if (!$("events")) return;
   $("events").innerHTML = state.events.length ? state.events.map(e => `<tr>
       <td class="small muted" style="white-space:nowrap">${fmtDay(e["Started at"] || e.Date)}<br>${e["Started at"] ? fmtTime(e["Started at"]) : ""}</td>
       <td>${esc(zoneName(e.Zone))}<div class="small muted">${e.Minutes} min${e.Source === "bridge-observed" ? " · the controller's own schedule" : ""}${e.By ? " · " + esc(e.By) : ""}</div></td></tr>`).join("")
@@ -825,6 +873,11 @@ document.addEventListener("click", async e => {
     if (pick == null) return;
     if (!p) { alert("Enter the number of a program."); return; }
     await request({ Action: "run_program", Program: p.id });
+  } else if (d.zfilter) {
+    zoneFilter = d.zfilter; renderZones();
+  } else if (d.wateropen) {
+    waterOpen = waterOpen === d.wateropen ? null : d.wateropen; renderZones();
+    $("min-" + waterOpen)?.focus();
   } else if (d.zedit) {
     const z = state.zones.find(z => z.id === d.zedit);
     zEditing = z.id;
