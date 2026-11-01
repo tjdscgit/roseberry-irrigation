@@ -101,6 +101,9 @@ header.top { padding:20px 0 4px; }
 .wbar i { display:block; }
 .legend { display:flex; gap:16px; margin:10px 4px; color:var(--ink-2); align-items:center; }
 .legend i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-1px; }
+.how summary { cursor:pointer; min-height:32px; display:flex; align-items:center; }
+.how p { margin:0; line-height:1.5; }
+.how .formula { background:var(--soft); border-radius:8px; padding:8px 10px; font-weight:600; }
 .runrow { display:flex; justify-content:space-between; gap:10px; font-size:14px; }
 .zonecard.watering { outline:2px solid var(--blue); }
 .zonecard input[type=number] { width:80px; }
@@ -260,6 +263,19 @@ nav.tabs svg { width:22px; height:22px; }
     <div class="chips" id="zoneChips"></div>
     <div id="zones" class="stack" style="gap:8px"></div>
     <div class="legend small"><span><i style="background:var(--rain)"></i>Rain</span><span><i style="background:var(--blue)"></i>Irrigation</span><span class="muted" id="fullBar">Full bar = 25 mm</span></div>
+    <details class="card how">
+      <summary><b>How this is worked out</b></summary>
+      <div class="stack small" style="gap:10px;margin-top:10px">
+        <p><b>Rain</b> is from the farm weather station: the highest daily total it reported for each of the last 7 days, added up. Zones marked "under cover" count no rain.</p>
+        <p><b>Irrigation</b> is the minutes each zone ran in the last 7 days, turned into mm with the zone's watering rate:</p>
+        <p class="formula">mm per hour = heads × flow per head (L/hr) ÷ area (m²)</p>
+        <p>One litre on one square metre is 1 mm. For example Z1 AB South: 10 heads × 279 L/hr ÷ (13.2 m × 30 m) = about 7 mm an hour, so 30 minutes is about 3.5 mm. It's marked "(est.)" because it assumes the water lands evenly. A measured rate (catch cups) entered in the planner is used instead when there is one. Zones without heads and area show minutes only.</p>
+        <p><b>Evaporation</b> is how much water a short, well-watered grass crop would lose to sun, wind and dry air (the FAO-56 Penman-Monteith method, the standard one used by the Bureau of Meteorology). It's worked out every 15 minutes from the station's temperature, humidity, wind, sunlight and air pressure, then added up. Gaps when the station was offline are left out, not guessed.</p>
+        <p class="formula">ahead or short = rain + irrigation − evaporation</p>
+        <p><b>Keep in mind:</b> tall or fast-growing crops use more than this and seedlings or fresh beds less, so treat it as a guide, not a measurement. Within 4 mm short shows green.</p>
+        <p class="muted" id="howNow"></p>
+      </div>
+    </details>
     <section class="card stack" style="gap:8px"><h2>Recent runs</h2><div id="zoneRecent" class="stack" style="gap:8px"></div></section>
   </div>
 
@@ -747,6 +763,7 @@ function renderZones() {
   const alive = bridgeAlive();
   $("fullBar").textContent = (state.et7 || 0) >= 1
     ? `Full bar = ${state.et7.toFixed(0)} mm evaporation${state.wxDays < 7 ? ` (${state.wxDays} days of weather so far)` : ""}` : "Full bar = 25 mm";
+  $("howNow").textContent = `Right now: ${(state.rain7 || 0).toFixed(1)} mm rain and ${(state.et7 || 0).toFixed(1)} mm evaporation over ${state.wxDays || 0} day(s) of weather readings.`;
   $("zoneChips").innerHTML = ZONE_FILTERS.map(f => `<button data-zfilter="${f}" class="${f === zoneFilter ? "on" : ""}">${f}</button>`).join("");
   const mins = {};
   for (const e of state.week || []) mins[e.Zone] = (mins[e.Zone] || 0) + Number(e.Minutes || 0);
