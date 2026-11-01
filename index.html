@@ -118,6 +118,11 @@ header.top { padding:20px 0 4px; }
 .qbar { position:fixed; left:0; right:0; bottom:calc(57px + env(safe-area-inset-bottom)); z-index:9; background:var(--card); border-top:1px solid var(--line);
         padding:12px 16px; display:flex; flex-direction:column; gap:6px; max-width:560px; margin:0 auto; }
 button.big { min-height:56px; font-size:17px; border-radius:14px; }
+.clash { border:0; border-radius:18px; padding:20px; width:min(92vw, 420px); background:var(--card); color:var(--ink); }
+.clash::backdrop { background:rgba(0,0,0,.45); }
+.clash h3 { margin:0 0 6px; font-size:18px; }
+.clash button { width:100%; margin-top:10px; }
+.clash p { margin:6px 0 0; }
 .runrow { display:flex; justify-content:space-between; gap:10px; font-size:14px; }
 .zonecard.watering { outline:2px solid var(--blue); }
 .zonecard input[type=number] { width:80px; }
@@ -445,6 +450,56 @@ function wateringByZone() {
   }
   return out;
 }
+// The bridge's own note of a run (start time even for runs it didn't start).
+function seen(zoneId) { return (bridge()?.Raw?.runs || []).find(r => r.zone_id === zoneId); }
+function soFar(zoneId) {
+  const m = Math.max(0, Math.floor((Date.now() - new Date(seen(zoneId).started)) / 60000));
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+}
+
+// What's in the way of watering these zones: something watering on the same Rain Bird
+// (one station at a time) or the same valve, or a program between zones.
+function clashWith(zoneIds) {
+  const zoneOf = id => state.zones.find(z => z.id === id);
+  const rb = zoneIds.some(id => zoneOf(id)?.Controller === "Rain Bird");
+  const w = wateringByZone();
+  for (const [id, info] of Object.entries(w)) {
+    const z = zoneOf(id);
+    if (!z || !(zoneIds.includes(id) || (rb && z.Controller === "Rain Bird"))) continue;
+    const pr = info.command?.Program ? runningPrograms().find(p => p.program === info.command.Program) : null;
+    return { zone: z, info, pr };
+  }
+  if (!rb) return null;
+  const pr = runningPrograms().find(p => p.status === "waiting" && zoneOf(p.zone)?.Controller === "Rain Bird");
+  return pr ? { zone: zoneOf(pr.zone), info: null, pr } : null;
+}
+
+// Asks what to do when something is already watering. Resolves "now", "after" or null.
+function askClash(cl, minutes) {
+  const name = shortZone(cl.zone.id), d = $("clash");
+  const left = cl.info?.left;
+  const progLeft = cl.pr ? (left || 0) / 60 + (cl.pr.next || []).reduce((a, n) => a + n.minutes, 0) : null;
+  const endsAt = cl.pr ? new Date(Date.now() + progLeft * 60000) : left != null ? new Date(Date.now() + left * 1000) : null;
+  const ours = !!cl.pr;
+  $("clashTitle").textContent = cl.info ? `${name} is watering now` : `${cl.pr.name} is under way`;
+  $("clashText").textContent = ours
+    ? `${cl.pr.name}, zone ${cl.pr.step} of ${cl.pr.of}${left != null ? `, ${Math.ceil(left / 60)} min left on this zone` : ""}. The Rain Bird waters one zone at a time.`
+    : `Started by the ${startedBy(cl.zone, cl.info)}${seen(cl.zone.id) ? `, ${soFar(cl.zone.id)} so far` : ""}. The Rain Bird waters one zone at a time.`;
+  $("clashNow").textContent = ours ? `Water now, then carry on with ${cl.pr.name}` : `Stop ${name} and water now`;
+  $("clashNowNote").textContent = ours
+    ? `${name} pauses and finishes its last ${left != null ? Math.ceil(left / 60) + " min" : "minutes"} after yours (${minutes} min).`
+    : `The ${startedBy(cl.zone, cl.info)} won't carry on afterwards; it can't be paused from here.`;
+  $("clashAfter").textContent = endsAt ? `Water after it finishes (about ${fmtTime(endsAt)})` : "Water after it finishes";
+  return new Promise(resolve => {
+    const done = v => { d.close(); resolve(v); };
+    $("clashNow").onclick = () => done("now");
+    $("clashAfter").onclick = () => done("after");
+    $("clashCancel").onclick = () => done(null);
+    d.oncancel = () => resolve(null);
+    d.showModal();
+  });
+}
+
 function startedBy(zone, w) {
   if (w.command?.Program) return "program";
   if (w.byApp) return "";
@@ -506,8 +561,9 @@ function renderToday() {
     cards.push(`<section class="now">
       <div class="between"><span class="label">Watering now</span><span class="small" style="opacity:.9">${ctx}</span></div>
       <div class="between" style="align-items:flex-end;margin-top:10px">
-        <div><div class="zone">${esc(z.Name)}</div><div class="small" style="opacity:.9">${esc(z.Controller)}${c?.["Started at"] ? " · started " + fmtTime(c["Started at"]) : ""}</div></div>
-        <span class="clock" data-left="${w.left != null ? Date.now() + w.left * 1000 : ""}">${w.left != null ? mmss(w.left) : ""}</span>
+        <div><div class="zone">${esc(z.Name)}</div><div class="small" style="opacity:.9">${esc(z.Controller)}${c?.["Started at"] ? " · started " + fmtTime(c["Started at"]) : seen(z.id)?.since_start ? " · started " + fmtTime(seen(z.id).started) : ""}</div></div>
+        ${w.left != null ? `<span class="clock" data-left="${Date.now() + w.left * 1000}">${mmss(w.left)}</span>`
+          : seen(z.id) ? `<span class="clock" style="text-align:right">${soFar(z.id)}<span class="small" style="display:block;font-weight:400;opacity:.85">${seen(z.id).since_start === false ? "at least, " : ""}so far</span></span>` : ""}
       </div>
       ${pct != null ? `<div class="bar"><div style="width:${pct.toFixed(0)}%"></div></div>` : `<div style="height:12px"></div>`}
       <div class="row">${isStopping ? `<span class="pill">Stopping…</span>`
@@ -1008,6 +1064,14 @@ document.addEventListener("click", async e => {
     const minutes = Number($("min-" + z.id).value);
     const cap = Math.min(z["Max minutes"] || 0, farmMax());
     if (!(minutes > 0 && minutes <= cap)) { alert(`Enter between 1 and ${cap} minutes.`); return; }
+    const cl = clashWith([z.id]);
+    if (cl) {
+      const mode = await askClash(cl, minutes);
+      if (!mode) return;
+      t.disabled = true;
+      await request({ Action: "run_queue", Mode: mode, Steps: [{ zone: z.id, minutes }] });
+      return;
+    }
     t.disabled = true;
     await request({ Zone: z.id, Action: "start", Minutes: minutes });
   } else if (d.stop) {
@@ -1046,9 +1110,12 @@ document.addEventListener("click", async e => {
     const steps = quickSteps(), why = checkQuick(steps);
     if (why) { alert(why); return; }
     const total = steps.reduce((a, s) => a + s.minutes, 0);
-    if (!confirm(`Water ${steps.map(s => `${shortZone(s.zone)} ${s.minutes} min`).join(", then ")}?\n${total} min in all.`)) return;
+    const cl = clashWith(steps.map(s => s.zone));
+    let mode = "";
+    if (cl) { mode = await askClash(cl, total); if (!mode) return; }
+    else if (!confirm(`Water ${steps.map(s => `${shortZone(s.zone)} ${s.minutes} min`).join(", then ")}?\n${total} min in all.`)) return;
     t.disabled = true;
-    if (await request({ Action: "run_queue", Steps: steps })) { quick = { minutes: quick.minutes, picked: [], each: {} }; tab = "today"; render(); }
+    if (await request({ Action: "run_queue", Steps: steps, ...(mode ? { Mode: mode } : {}) })) { quick = { minutes: quick.minutes, picked: [], each: {} }; tab = "today"; render(); }
     t.disabled = false;
   } else if (t.id === "qSave") {
     const steps = quickSteps(), why = checkQuick(steps);
@@ -1180,5 +1247,13 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !$
 
 sb.auth.getSession().then(({ data }) => data.session ? startApp().catch(showError) : showLogin());
 </script>
+<dialog id="clash" class="clash">
+  <h3 id="clashTitle"></h3>
+  <p class="small" id="clashText"></p>
+  <button class="primary big" id="clashNow"></button>
+  <p class="small muted" id="clashNowNote"></p>
+  <button class="alt big" id="clashAfter"></button>
+  <button class="plain" id="clashCancel">Cancel</button>
+</dialog>
 </body>
 </html>
