@@ -4,98 +4,131 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Roseberry Irrigation</title>
-<meta name="theme-color" content="#1F4E5F">
+<meta name="theme-color" content="#1F5F99">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <!--
   Roseberry irrigation app. Talks only to Supabase (the planner's database), never to the
-  devices: it shows what the bridge on the shed PC reports, and asks for runs by adding rows
-  to irrigation_commands. Every safety rule is enforced by the bridge, so the worst this page
-  can do is ask. The publishable key below is meant to be public; every table is gated on the
-  shared farm login (row level security), same as the planner.
+  devices: it shows what the bridge on the shed PC reports, asks for runs by adding rows to
+  irrigation_commands, and edits programs in irrigation_programs, which the bridge runs from
+  its own copy. Every safety rule is enforced by the bridge, so the worst this page can do is
+  ask. The publishable key below is meant to be public; every table is gated on the shared
+  farm login (row level security), same as the planner.
 -->
 <style>
 :root {
-  --paper:#F7F5EF; --paper-2:#EFEBE0; --paper-3:#E7E2D4;
-  --ink:#14181B; --ink-2:#5C6660; --line:#D9D4C6; --line-2:#C7C1AF;
-  --steel:#1F4E5F; --steel-soft:#3C7286; --steel-tint:rgba(31,78,95,.10);
-  --clay:#C64A2E; --clay-tint:rgba(198,74,46,.10); --ok:#3F7D46; --ok-tint:rgba(63,125,70,.12);
-  --amber:#A86B12; --amber-tint:rgba(168,107,18,.12);
-  --shadow:0 1px 0 rgba(0,0,0,.04), 0 8px 24px -12px rgba(20,24,27,.28);
-  --serif:"Fraunces",Georgia,"Times New Roman",serif;
-  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --ground:#F4F5F1; --card:#FFFFFF; --soft:#ECEEEA; --line:#DDE1DA; --line-2:#C9CFC6;
+  --ink:#1B2420; --ink-2:#3F4A45; --muted:#5A6660;
+  --blue:#1F5F99; --blue-ink:#174A78; --blue-tint:#E8EEF5; --on-blue:#FFFFFF;
+  --ok:#1E5E38; --ok-dot:#2E7D4F; --ok-tint:#E3F0E7;
+  --warn:#7A4A00; --warn-tint:#FFF4E0; --bad:#8A1C1C; --bad-tint:#FBE9E9;
+  --font:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper:#14181B; --paper-2:#1D2226; --paper-3:#262B2F;
-    --ink:#EAE7DE; --ink-2:#98A29A; --line:#2A2F33; --line-2:#3B4248;
-    --steel:#6FA6BA; --steel-soft:#8FBECE; --steel-tint:rgba(143,190,206,.12);
-    --clay:#E2755A; --clay-tint:rgba(226,117,90,.14); --ok:#6BC177; --ok-tint:rgba(107,193,119,.14);
-    --amber:#E0A84A; --amber-tint:rgba(224,168,74,.14);
-    --shadow:0 1px 0 rgba(0,0,0,.5), 0 8px 24px -12px rgba(0,0,0,.65);
+    --ground:#121715; --card:#1B2220; --soft:#242C29; --line:#2C3532; --line-2:#3C4743;
+    --ink:#E8EDEA; --ink-2:#C2CCC7; --muted:#97A39D;
+    --blue:#7DB3E3; --blue-ink:#A6CBEE; --blue-tint:#1E2E3D; --on-blue:#0C1A27;
+    --ok:#7FD39A; --ok-dot:#5DBB7C; --ok-tint:#1C3326;
+    --warn:#F0BE6A; --warn-tint:#3A2D14; --bad:#F29C9C; --bad-tint:#3B1D1D;
   }
 }
 * { box-sizing:border-box; }
-html, body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.45 var(--sans); }
-body { padding:0 16px calc(32px + env(safe-area-inset-bottom)); max-width:760px; margin:0 auto; }
-h1, h2 { font-family:var(--serif); font-weight:600; margin:0; }
-h1 { font-size:24px; }
-h2 { font-size:18px; margin:22px 0 10px; }
-button { font:inherit; border-radius:10px; border:1px solid var(--line-2); background:var(--paper-2);
-         color:var(--ink); padding:9px 14px; cursor:pointer; min-height:42px; }
-button:disabled { opacity:.5; cursor:default; }
-button.primary { background:var(--steel); border-color:var(--steel); color:#fff; }
-button.danger { background:var(--clay); border-color:var(--clay); color:#fff; }
-input { font:inherit; color:var(--ink); background:var(--paper); border:1px solid var(--line-2);
-        border-radius:10px; padding:9px 10px; min-height:42px; }
-.muted { color:var(--ink-2); }
-.small { font-size:13px; }
-.card { background:var(--paper-2); border:1px solid var(--line); border-radius:14px; padding:14px; box-shadow:var(--shadow); }
+html, body { margin:0; background:var(--ground); color:var(--ink); font:15px/1.45 var(--font); }
+body { padding-bottom:calc(72px + env(safe-area-inset-bottom)); }
+.wrap { max-width:640px; margin:0 auto; padding:0 16px; }
+h1 { font-size:26px; font-weight:700; margin:0; }
+h2 { font-size:17px; font-weight:700; margin:0; }
+button, .btn { font:inherit; font-weight:600; border-radius:10px; border:0; background:var(--blue-tint);
+  color:var(--blue); padding:0 14px; min-height:44px; cursor:pointer; display:inline-flex; align-items:center;
+  justify-content:center; gap:6px; text-decoration:none; }
+button:disabled { opacity:.45; cursor:default; }
+button.primary { background:var(--blue); color:var(--on-blue); }
+button.danger { background:var(--bad-tint); color:var(--bad); }
+button.plain { background:var(--soft); color:var(--ink-2); }
+button.ghost { background:transparent; border:1px dashed var(--line-2); color:var(--ink-2); font-weight:500; }
+input, select { font:inherit; color:var(--ink); background:var(--card); border:1px solid var(--line-2);
+  border-radius:10px; padding:0 12px; min-height:44px; }
+input[type=checkbox] { width:24px; height:24px; min-height:0; accent-color:var(--blue); }
+label { cursor:pointer; }
+.muted { color:var(--muted); } .small { font-size:13px; } .tiny { font-size:12px; }
+.card { background:var(--card); border-radius:16px; padding:16px; margin-top:16px; }
 .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.between { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.stack { display:flex; flex-direction:column; gap:10px; }
+.grid2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.grid3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
 .spacer { flex:1; }
-.pill { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:3px 10px;
-        font-size:13px; border:1px solid var(--line-2); background:var(--paper); white-space:nowrap; }
-.dot { width:9px; height:9px; border-radius:50%; background:var(--ink-2); flex:none; }
-.dot.ok { background:var(--ok); } .dot.bad { background:var(--clay); } .dot.wait { background:var(--amber); }
-.pill.warn { background:var(--amber-tint); border-color:transparent; color:var(--amber); }
-.pill.bad { background:var(--clay-tint); border-color:transparent; color:var(--clay); }
+.hidden { display:none !important; }
+.pill { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:5px 10px;
+  font-size:13px; font-weight:600; background:var(--soft); color:var(--muted); white-space:nowrap; }
+.pill.ok { background:var(--ok-tint); color:var(--ok); } .pill.blue { background:var(--blue-tint); color:var(--blue); }
+.pill.warn { background:var(--warn-tint); color:var(--warn); } .pill.bad { background:var(--bad-tint); color:var(--bad); }
+.dot { width:10px; height:10px; border-radius:50%; background:currentColor; flex:none; }
+.ok-t { color:var(--ok); } .warn-t { color:var(--warn); } .bad-t { color:var(--bad); } .blue-t { color:var(--blue); }
 
-header { position:sticky; top:0; z-index:5; background:var(--paper); padding:14px 0 10px;
-         border-bottom:1px solid var(--line); margin-bottom:12px; }
-#banners > div { border-radius:12px; padding:10px 12px; margin:8px 0; }
-.banner-crit { background:var(--clay-tint); color:var(--clay); }
-.banner-warn { background:var(--amber-tint); color:var(--amber); }
-.banner-info { background:var(--steel-tint); color:var(--steel); }
-.banner-crit button, .banner-warn button { min-height:32px; padding:4px 10px; margin-left:8px; }
+header.top { padding:20px 0 4px; }
+.banner { border-radius:12px; padding:12px 14px; margin-top:12px; font-size:14px; }
+.banner.crit { background:var(--bad-tint); color:var(--bad); }
+.banner.warn { background:var(--warn-tint); color:var(--warn); }
+.banner.info { background:var(--blue-tint); color:var(--blue); }
+.banner button { min-height:34px; margin-left:8px; background:var(--card); color:inherit; }
 
-.weather { display:grid; grid-template-columns:repeat(auto-fit, minmax(96px,1fr)); gap:10px; }
-.weather .v { font-family:var(--serif); font-size:22px; }
-.devices { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:10px; }
-.devices .card { padding:10px 12px; }
+.now { background:var(--blue); color:var(--on-blue); border-radius:16px; padding:18px; margin-top:16px; }
+.now .label { font-size:13px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; opacity:.85; }
+.now .zone { font-size:22px; font-weight:700; }
+.now .clock { font-size:34px; font-weight:700; font-variant-numeric:tabular-nums; }
+.now .bar { height:6px; background:rgba(255,255,255,.25); border-radius:3px; margin:12px 0; }
+.now .bar div { height:6px; background:var(--on-blue); border-radius:3px; }
+.now button { flex:1; background:var(--on-blue); color:var(--bad); }
+.now button.alt { background:transparent; color:var(--on-blue); border:1px solid rgba(255,255,255,.6); }
+@media (prefers-color-scheme: dark) { .now button { background:var(--ground); } .now button.alt { border-color:rgba(12,26,39,.5); color:var(--on-blue);} }
 
-.block { margin-top:6px; }
-.block h3 { font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-2); margin:16px 0 8px; font-weight:600; }
-.zone { margin-bottom:10px; }
-.zone.watering { border-color:var(--steel); background:var(--steel-tint); }
-.zone .name { font-weight:600; }
-.zone .state { font-family:var(--mono); font-size:14px; }
-.zone .actions { margin-top:10px; }
-.zone .actions input { width:82px; }
-.zone .cmd { margin-top:8px; font-size:13px; }
+.plan { display:flex; gap:12px; align-items:center; padding:6px 0; }
+.plan .t { width:52px; font-weight:600; color:var(--muted); font-variant-numeric:tabular-nums; }
+.plan.flag { background:var(--warn-tint); border-radius:10px; padding:10px; }
+.tile { background:var(--card); border-radius:12px; padding:12px; }
+.tile .v { font-size:20px; font-weight:700; }
+
+.zonecard { background:var(--card); border-radius:14px; padding:12px 14px; margin-top:8px; }
+.zonecard.watering { outline:2px solid var(--blue); }
+.zonecard input[type=number] { width:80px; }
+.block-h { font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600; margin:18px 0 0; }
+
+.prog { display:block; width:100%; text-align:left; background:var(--card); border-radius:14px; padding:14px 16px;
+  margin-top:10px; color:var(--ink); min-height:0; font-weight:400; }
+.prog b { font-size:16px; }
+
+.days { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+.days button { padding:0; background:var(--card); color:var(--ink-2); border:1px solid var(--line-2); }
+.days button.on { background:var(--blue); color:var(--on-blue); border-color:var(--blue); }
+.steprow { display:flex; gap:8px; align-items:center; border-top:1px solid var(--soft); padding-top:10px; }
+.steprow select { flex:1; min-width:0; }
+.steprow input { width:70px; }
+.steprow button { min-width:40px; padding:0 8px; }
+.field { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; color:var(--ink-2); }
+.field input, .field select { font-weight:400; font-size:16px; }
+.switchrow { display:flex; justify-content:space-between; align-items:center; gap:12px; font-size:14px; }
+.switchrow input[type=number] { width:84px; }
 
 table { width:100%; border-collapse:collapse; font-size:14px; }
-td { padding:7px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
-.status-done { color:var(--ok); } .status-running, .status-sent, .status-pending { color:var(--steel); }
-.status-rejected, .status-failed, .status-expired { color:var(--clay); }
+td { padding:8px 4px; border-bottom:1px solid var(--soft); vertical-align:top; }
+.status-done { color:var(--ok); } .status-running, .status-sent, .status-pending { color:var(--blue); }
+.status-rejected, .status-failed, .status-expired { color:var(--bad); }
 
-#login { max-width:360px; margin:18vh auto 0; }
+nav.tabs { position:fixed; left:0; right:0; bottom:0; z-index:10; background:var(--card); border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom); }
+nav.tabs .in { max-width:640px; margin:0 auto; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); }
+nav.tabs button { background:transparent; color:var(--muted); font-weight:500; font-size:13px; border-radius:0; min-height:56px;
+  flex-direction:column; gap:2px; }
+nav.tabs button.on { color:var(--blue); font-weight:700; }
+nav.tabs svg { width:22px; height:22px; }
+
+#login { max-width:360px; margin:18vh auto 0; padding:0 16px; }
 #login input { width:100%; margin:12px 0; }
-.hidden { display:none !important; }
-footer { margin-top:28px; }
 </style>
 </head>
 <body>
@@ -104,59 +137,130 @@ footer { margin-top:28px; }
   <h1>Roseberry Irrigation</h1>
   <p class="muted">Sign in with the farm password (the same one as the planner).</p>
   <form id="loginForm">
-    <input id="password" type="password" autocomplete="current-password" placeholder="Farm password" required>
+    <input id="password" type="password" autocomplete="current-password" placeholder="Farm password" aria-label="Farm password" required>
     <button class="primary" type="submit" style="width:100%">Sign in</button>
-    <p id="loginError" class="small" style="color:var(--clay)"></p>
+    <p id="loginError" class="small bad-t"></p>
   </form>
 </section>
 
 <main id="app" class="hidden">
-  <header>
-    <div class="row">
-      <h1>Irrigation</h1>
-      <span class="spacer"></span>
-      <span id="bridgePill" class="pill"><span class="dot"></span>Bridge</span>
-    </div>
-    <div id="modePills" class="row small" style="margin-top:8px"></div>
-    <div id="nowWatering" class="row small" style="margin-top:8px"></div>
-  </header>
-
-  <div id="banners"></div>
-
-  <div class="row" style="margin:6px 0 4px">
-    <button id="stopAll" class="danger">Stop all</button>
-    <span class="spacer"></span>
-    <span class="small muted" id="updated"></span>
+  <!-- ============================================================ Today -->
+  <div id="tab-today" class="wrap">
+    <header class="top between">
+      <div><div class="small muted" id="todayDate"></div><h1>Today</h1></div>
+      <span id="statusPill" class="pill"></span>
+    </header>
+    <div id="banners"></div>
+    <div id="nowCards"></div>
+    <section class="card">
+      <div class="between"><h2>Today's plan</h2><button class="plain" data-tab="programs" style="min-height:36px">All programs</button></div>
+      <div id="plan" style="margin-top:8px"></div>
+    </section>
+    <div id="weatherTiles" class="grid3" style="margin-top:16px"></div>
+    <section class="card">
+      <h2>Quick actions</h2>
+      <div class="grid2" style="margin-top:10px">
+        <button data-tab="zones">Water a zone</button>
+        <button id="runProgramBtn">Run a program now</button>
+        <button id="rainDelayBtn">Rain delay…</button>
+        <button id="stopAll" class="danger">Stop everything</button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="between"><h2>Devices</h2><button class="plain" data-tab="health" style="min-height:36px">Details</button></div>
+      <div id="deviceSummary" class="stack" style="margin-top:10px; gap:6px"></div>
+    </section>
+    <p class="tiny muted" id="updated" style="margin:14px 0"></p>
   </div>
 
-  <h2>Zones</h2>
-  <div id="zones"></div>
+  <!-- ============================================================ Programs -->
+  <div id="tab-programs" class="wrap hidden">
+    <header class="top between"><h1>Programs</h1><button class="primary" id="newProgram">New program</button></header>
+    <p class="small muted" style="margin:6px 0 0">As many as you like. The shed PC keeps its own copy and runs them from its clock, one Rain Bird zone after another, so they still run if the internet drops.</p>
+    <div id="programsOff"></div>
+    <div id="programList"></div>
+  </div>
 
-  <h2>Weather</h2>
-  <div id="weather" class="card"></div>
+  <!-- ============================================================ Program editor -->
+  <div id="tab-edit" class="wrap hidden">
+    <header class="top between">
+      <button class="plain" id="editBack">Back</button>
+      <h2 id="editTitle">New program</h2>
+      <button class="primary" id="editSave">Save</button>
+    </header>
+    <section class="card stack">
+      <label class="field">Name <input id="pName" maxlength="60" placeholder="e.g. Morning field"></label>
+      <div class="switchrow"><span><b>On</b><br><span class="small muted">Off = kept, but never runs by itself</span></span><input type="checkbox" id="pEnabled" aria-label="Program on"></div>
+      <span class="field">Days</span>
+      <div class="row small"><label><input type="radio" name="pMode" value="days" checked style="width:18px;height:18px;min-height:0"> Chosen days</label>
+        <label><input type="radio" name="pMode" value="every" style="width:18px;height:18px;min-height:0"> Every few days</label></div>
+      <div id="pDays" class="days"></div>
+      <div id="pEvery" class="row hidden small">Every <select id="pEveryN" aria-label="Every how many days"><option>2</option><option>3</option><option>4</option><option>5</option><option>7</option><option>14</option></select> days, starting <input type="date" id="pAnchor" aria-label="Starting date"></div>
+      <span class="field">Start times</span>
+      <div id="pTimes" class="row"></div>
+    </section>
+    <section class="card stack">
+      <div class="between"><h2>Zones, in order</h2><span class="small muted" id="pTotal"></span></div>
+      <div id="pSteps" class="stack"></div>
+      <button class="ghost" id="addStep">Add a zone</button>
+    </section>
+    <section class="card stack">
+      <h2>Weather</h2>
+      <div class="switchrow">Skip if this much rain has fallen today <span class="row" style="gap:6px"><input type="number" id="pRain" min="0" step="1" inputmode="decimal" placeholder="off" aria-label="Rain skip millimetres"> mm</span></div>
+    </section>
+    <section class="card stack">
+      <h2>If something goes wrong</h2>
+      <div class="switchrow">Keep retrying a zone that can't start for <span class="row" style="gap:6px"><input type="number" id="pRetry" min="0" max="240" step="5" inputmode="numeric" aria-label="Retry minutes"> min</span></div>
+      <div class="switchrow">Tell my phone when it finishes <input type="checkbox" id="pNotify" aria-label="Notify when finished"></div>
+      <span class="small muted">A zone that still hasn't run after that sends an alert, so nothing is missed quietly.</span>
+    </section>
+    <div class="grid2" style="margin-top:16px">
+      <button id="editRun">Run now</button>
+      <button class="danger" id="editDelete">Delete</button>
+    </div>
+    <div style="height:20px"></div>
+  </div>
 
-  <h2>Devices</h2>
-  <div id="devices" class="devices"></div>
+  <!-- ============================================================ Zones -->
+  <div id="tab-zones" class="wrap hidden">
+    <header class="top"><h1>Zones</h1><span class="small muted">Start or stop any zone. Runs are capped at each zone's maximum.</span></header>
+    <div id="zones"></div>
+    <section class="card">
+      <h2>Recent runs</h2>
+      <table id="events" style="margin-top:8px"></table>
+    </section>
+  </div>
 
-  <h2>Recent requests</h2>
-  <div class="card"><table id="commands"></table></div>
+  <!-- ============================================================ Health -->
+  <div id="tab-health" class="wrap hidden">
+    <header class="top"><h1>Health</h1></header>
+    <div id="healthBanners"></div>
+    <section class="card"><h2>Devices</h2><div id="devices" class="stack" style="margin-top:10px"></div></section>
+    <section class="card"><h2>Recent requests</h2><table id="commands" style="margin-top:8px"></table></section>
+    <section class="card row">
+      <label class="field" style="flex:1">Your name, for the log <input id="who" placeholder="e.g. Sam"></label>
+      <button class="plain" id="logout" style="align-self:flex-end">Sign out</button>
+    </section>
+    <div style="height:20px"></div>
+  </div>
 
-  <h2>Recent watering</h2>
-  <div class="card"><table id="events"></table></div>
-
-  <footer class="row small muted">
-    <label>Your name <input id="who" style="width:140px" placeholder="for the log"></label>
-    <span class="spacer"></span>
-    <button id="logout">Sign out</button>
-  </footer>
+  <nav class="tabs" aria-label="Sections"><div class="in">
+    <button data-tab="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Today</button>
+    <button data-tab="programs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Programs</button>
+    <button data-tab="zones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>Zones</button>
+    <button data-tab="health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Health</button>
+  </div></nav>
 </main>
 
 <script>
 const SB_URL = "https://xgvmbuqefvpmzfbywqfw.supabase.co";
 const SB_KEY = "sb_publishable_0Sjh0qMDrEYTnLGigxDkdQ_EizyMp1E";
 const FARM_EMAIL = "gday@roseberrygrowers.com.au";   // the planner's shared farm login
+const FARM_TZ = "Australia/Sydney";                  // programs run on farm time
 const HEARTBEAT_STALE_MS = 3 * 60 * 1000;            // bridge beats every 60 s
 const DEFAULT_MINUTES = 10;
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 
 const sb = supabase.createClient(SB_URL, SB_KEY, { auth: { storageKey: "roseberry_irrigation_auth" } });
 const $ = id => document.getElementById(id);
@@ -171,26 +275,34 @@ const ago = d => {
   return fmtDay(d);
 };
 const mmss = sec => { sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0"); };
+// The farm's date and weekday, whatever time zone the phone is in.
+function farmToday() {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-AU", { timeZone: FARM_TZ, year:"numeric", month:"2-digit",
+    day:"2-digit", weekday:"short", hour:"2-digit", minute:"2-digit", hourCycle:"h23" }).formatToParts(new Date()).map(p => [p.type, p.value]));
+  return { iso: `${parts.year}-${parts.month}-${parts.day}`, dow: DAY_KEYS.indexOf(parts.weekday.toLowerCase().slice(0, 3)),
+           hm: `${parts.hour}:${parts.minute}` };
+}
 
-let state = { zones: [], devices: [], commands: [], events: [], alerts: [], weather: null };
-// Minutes typed into each zone's box. Live updates redraw the zones every few seconds, so the
-// boxes are rebuilt from this rather than reset to the default under someone's thumb.
+let state = { zones: [], devices: [], commands: [], events: [], alerts: [], weather: null, programs: [], programsMissing: false };
 const typedMinutes = {};
+let tab = "today";
+let editing = null;   // program being edited (a copy), or null
 
 // ---------------------------------------------------------------- data
 
 async function load() {
   const since = new Date(Date.now() - 3 * 86400000).toISOString();
-  const [zones, devices, commands, events, alerts, weather] = await Promise.all([
+  const [zones, devices, commands, events, alerts, weather, programs] = await Promise.all([
     sb.from("irrigation_zones").select("*").order("Order"),
     sb.from("device_status").select("*"),
     sb.from("irrigation_commands").select("*").gte('"Requested at"', since)
-      .order('"Requested at"', { ascending: false }).limit(25),
+      .order('"Requested at"', { ascending: false }).limit(60),
     sb.from("irrigation_events").select("*").not("Zone", "is", null)
       .order('"Started at"', { ascending: false }).limit(25),
     sb.from("irrigation_alerts").select("*").is('"Cleared at"', null)
       .order('"Raised at"', { ascending: false }),
     sb.from("weather_readings").select("*").order('"Observed at"', { ascending: false }).limit(1),
+    sb.from("irrigation_programs").select("*").order("Name"),
   ]);
   for (const r of [zones, devices, commands, events, alerts, weather]) {
     if (r.error) {
@@ -198,13 +310,16 @@ async function load() {
       throw r.error;
     }
   }
+  // Until the programs table exists, the rest of the app works as before.
+  const programsMissing = !!programs.error;
   state = { zones: zones.data, devices: devices.data, commands: commands.data, events: events.data,
-            alerts: alerts.data, weather: weather.data[0] || null, loadedAt: Date.now() };
+            alerts: alerts.data, weather: weather.data[0] || null, programs: programs.data || [],
+            programsMissing, loadedAt: Date.now() };
   render();
 }
 
 let reloadTimer = null;
-function reloadSoon() {   // many realtime changes arrive together; load once
+function reloadSoon() {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => load().catch(showError), 400);
 }
@@ -218,8 +333,12 @@ function controllable(controller) {
   const c = bridge()?.Raw?.control || {};
   return c[controller] !== false && controller in c;
 }
+function programsOn() { return Array.isArray(bridge()?.Raw?.programs); }
+function runningPrograms() { return bridge()?.Raw?.programs || []; }
+function zoneName(id) { return state.zones.find(z => z.id === id)?.Name || ""; }
+function shortZone(id) { return zoneName(id).replace(/^Z\d+\s*[—-]\s*/, "") || id; }
+function farmMax() { return bridge()?.Raw?.max_run_minutes || 120; }
 
-// Watering now, per zone, from what the devices last reported.
 function wateringByZone() {
   const out = {};
   for (const d of state.devices) {
@@ -229,20 +348,17 @@ function wateringByZone() {
       out[d["Active zone"]] = { left, pretend: d.id.startsWith("mock-") };
     }
   }
-  // A run the bridge started and confirmed counts as watering straight away, with time
-  // left worked out from when it started (the Rain Bird doesn't report time left).
   for (const c of state.commands) {
     if (c.Action !== "start" || c.Status !== "running" || !c["Started at"]) continue;
     const left = c.Minutes * 60 - (Date.now() - new Date(c["Started at"])) / 1000;
-    const known = out[c.Zone];
-    if (!known) out[c.Zone] = { left: Math.max(0, left), byApp: true };
-    else { known.byApp = true; if (known.left == null) known.left = Math.max(0, left); }
+    const known = out[c.Zone] || (out[c.Zone] = {});
+    known.byApp = true; known.command = c;
+    if (known.left == null) known.left = Math.max(0, left);
   }
   return out;
 }
-
-// Who started a run: the app, or the controller's own program/schedule.
 function startedBy(zone, w) {
+  if (w.command?.Program) return "program";
   if (w.byApp) return "";
   return zone.Controller === "Rain Bird" ? "Rain Bird program" : "LinkTap schedule";
 }
@@ -250,52 +366,270 @@ function startedBy(zone, w) {
 // ---------------------------------------------------------------- render
 
 function render() {
-  const b = bridge();
-  const alive = bridgeAlive();
-  $("bridgePill").innerHTML = `<span class="dot ${alive ? "ok" : "bad"}"></span>Bridge ${alive ? "online" : "offline"}`;
-  const pills = [];
-  if (b?.Raw?.dry_run) pills.push(`<span class="pill warn">Dry run: nothing is really started or stopped</span>`);
-  for (const p of b?.Raw?.pretend || []) pills.push(`<span class="pill">${esc(p)} is pretend</span>`);
-  $("modePills").innerHTML = pills.join("");
-
-  const watering = wateringByZone();
-  const now = state.zones.filter(z => watering[z.id]).map(z => {
-    const by = startedBy(z, watering[z.id]);
-    return `<span class="pill" style="background:var(--steel-tint);border-color:transparent;color:var(--steel)">
-      <span class="dot ok"></span>${esc(z.Name)}${by ? " · " + esc(by) : ""}</span>`;
-  });
-  $("nowWatering").innerHTML = now.length ? `<span class="muted">Watering now:</span> ${now.join("")}`
-                                          : `<span class="muted">Nothing watering</span>`;
-
-  const banners = [];
-  if (!alive) banners.push(`<div class="banner-crit"><b>The bridge isn't checking in</b>${b?.["Last seen"] ? ` (last heard ${ago(b["Last seen"])})` : ""}. Requests will wait and then expire. Anything already watering still stops on the controller's own timer.</div>`);
-  for (const a of state.alerts) {
-    const cls = a.Severity === "critical" ? "banner-crit" : a.Severity === "warning" ? "banner-warn" : "banner-info";
-    const ack = a["Acknowledged at"] ? `<span class="small"> · seen by ${esc(a["Acknowledged by"] || "someone")}</span>`
-      : `<button data-ack="${esc(a.id)}">Seen</button>`;
-    banners.push(`<div class="${cls}">${esc(a.Message)} <span class="small">· ${ago(a["Raised at"])}</span>${ack}</div>`);
-  }
-  $("banners").innerHTML = banners.join("");
-
-  // Don't rebuild the zones while someone is typing a run time; catch up when they leave the box.
-  if (document.activeElement?.id?.startsWith("min-")) zonesStale = true;
-  else renderZones();
-  renderWeather();
-  renderDevices();
-  renderCommands();
+  for (const t of ["today", "programs", "edit", "zones", "health"]) $("tab-" + t).classList.toggle("hidden", t !== tab);
+  for (const b of document.querySelectorAll("nav.tabs button")) b.classList.toggle("on", b.dataset.tab === (tab === "edit" ? "programs" : tab));
+  renderToday();
+  renderPrograms();
+  if (document.activeElement?.id?.startsWith("min-")) zonesStale = true; else renderZones();
   renderEvents();
-  $("updated").textContent = "Updated " + fmtTime(state.loadedAt);
-  $("stopAll").disabled = !alive;
+  renderHealth();
 }
 
-let zonesStale = false;
+function bannersHtml() {
+  const b = bridge(), alive = bridgeAlive(), out = [];
+  if (!alive) out.push(`<div class="banner crit"><b>The shed PC isn't checking in</b>${b?.["Last seen"] ? ` (last heard ${ago(b["Last seen"])})` : ""}. Requests wait and then expire. Anything already watering still stops on the controller's own timer.</div>`);
+  if (b?.Raw?.dry_run) out.push(`<div class="banner warn">Dry run: nothing is really started or stopped.</div>`);
+  for (const p of b?.Raw?.pretend || []) out.push(`<div class="banner info">${esc(p)} is a pretend device.</div>`);
+  for (const a of state.alerts) {
+    const cls = a.Severity === "critical" ? "crit" : a.Severity === "warning" ? "warn" : "info";
+    const ack = a["Acknowledged at"] ? `<span class="small"> · seen by ${esc(a["Acknowledged by"] || "someone")}</span>`
+      : `<button data-ack="${esc(a.id)}">Seen</button>`;
+    out.push(`<div class="banner ${cls}">${esc(a.Message)} <span class="small">· ${ago(a["Raised at"])}</span>${ack}</div>`);
+  }
+  return out.join("");
+}
+
+function renderToday() {
+  const t = farmToday();
+  $("todayDate").textContent = new Date().toLocaleDateString("en-AU", { timeZone: FARM_TZ, weekday:"long", day:"numeric", month:"long" });
+  const alive = bridgeAlive();
+  const problems = state.alerts.filter(a => !a["Acknowledged at"]).length + (alive ? 0 : 1);
+  $("statusPill").className = "pill " + (problems ? "warn" : "ok");
+  $("statusPill").innerHTML = `<span class="dot"></span>${problems ? problems + " to look at" : "All systems OK"}`;
+  $("banners").innerHTML = bannersHtml();
+
+  // Watering now
+  const watering = wateringByZone();
+  const progs = runningPrograms();
+  const cards = [];
+  for (const z of state.zones) {
+    const w = watering[z.id];
+    if (!w) continue;
+    const c = w.command;
+    const pr = c?.Program ? progs.find(p => p.program === c.Program) : null;
+    const total = c?.Minutes ? c.Minutes * 60 : null;
+    const pct = total && w.left != null ? Math.min(100, Math.max(0, 100 * (1 - w.left / total))) : null;
+    const by = startedBy(z, w);
+    const ctx = pr ? `${esc(pr.name)} · zone ${pr.step} of ${pr.of}` : by && by !== "program" ? esc(by) : "Started from the app";
+    const next = pr?.next?.length ? `Next: ${pr.next.slice(0, 2).map(n => `${esc(shortZone(n.zone))} ${n.minutes} min`).join(", ")}${pr.next.length > 2 ? `, then ${pr.next.length - 2} more` : ""}` : "";
+    const canStop = alive && controllable(z.Controller);
+    const isStopping = stopping(z.id);
+    cards.push(`<section class="now">
+      <div class="between"><span class="label">Watering now</span><span class="small" style="opacity:.9">${ctx}</span></div>
+      <div class="between" style="align-items:flex-end;margin-top:10px">
+        <div><div class="zone">${esc(z.Name)}</div><div class="small" style="opacity:.9">${esc(z.Controller)}${c?.["Started at"] ? " · started " + fmtTime(c["Started at"]) : ""}</div></div>
+        <span class="clock" data-left="${w.left != null ? Date.now() + w.left * 1000 : ""}">${w.left != null ? mmss(w.left) : ""}</span>
+      </div>
+      ${pct != null ? `<div class="bar"><div style="width:${pct.toFixed(0)}%"></div></div>` : `<div style="height:12px"></div>`}
+      <div class="row">${isStopping ? `<span class="pill">Stopping…</span>`
+        : pr ? `<button data-stopprog="${esc(pr.program)}" ${canStop ? "" : "disabled"}>Stop program</button><button class="alt" data-stop="${esc(z.id)}" ${canStop ? "" : "disabled"}>Skip to next zone</button>`
+        : `<button data-stop="${esc(z.id)}" ${canStop ? "" : "disabled"}>Stop</button>`}</div>
+      ${next ? `<div class="small" style="opacity:.9;margin-top:10px">${next}</div>` : ""}
+    </section>`);
+  }
+  // A program between zones (waiting for the next to start) still shows.
+  for (const pr of progs) {
+    if (pr.status === "waiting" && !cards.some(h => h.includes(`data-stopprog="${esc(pr.program)}"`))) {
+      cards.push(`<section class="now"><div class="between"><span class="label">Program under way</span><span class="small">${esc(pr.name)} · zone ${pr.step} of ${pr.of}</span></div>
+        <div class="zone" style="margin-top:8px">Next: ${esc(zoneName(pr.zone))}</div>
+        <div class="small" style="opacity:.9">${esc(pr.note || "starting shortly")}</div>
+        <div class="row" style="margin-top:12px"><button data-stopprog="${esc(pr.program)}" ${alive ? "" : "disabled"}>Stop program</button></div></section>`);
+    }
+  }
+  $("nowCards").innerHTML = cards.join("") || `<section class="card between"><span class="muted">Nothing watering right now</span></section>`;
+
+  // Today's plan, from the programs
+  const rain = state.weather?.["Rain day mm"];
+  const items = [];
+  for (const p of state.programs) {
+    if (!p.Enabled || !runsOn(p, t)) continue;
+    for (const time of p["Start times"] || []) {
+      const key = `${p.id}@${t.iso}T${time}`;
+      const steps = p.Steps || [];
+      const mins = steps.reduce((a, s) => a + Number(s.minutes || 0), 0);
+      const cmds = state.commands.filter(c => c["Program run"] === key);
+      const live = progs.find(r => r.key === key);
+      let status, cls = "muted";
+      if (live) { status = "Running"; cls = "blue-t"; }
+      else if (cmds.length) { status = cmds.some(c => ["failed", "rejected", "expired"].includes(c.Status)) ? "Had problems" : "Done"; cls = status === "Done" ? "ok-t" : "bad-t"; }
+      else if (time <= t.hm) { status = "Didn't run"; cls = "warn-t"; }
+      else status = "Waiting";
+      const rainFlag = !cmds.length && !live && p["Rain skip mm"] != null && rain != null && time > t.hm;
+      const sub = `${steps.map(s => shortZone(s.zone)).slice(0, 4).join(", ")}${steps.length > 4 ? "…" : ""} · ${mins} min`;
+      items.push({ time, html: `<div class="plan ${rainFlag ? "flag" : ""}"><span class="t">${esc(time)}</span>
+        <div style="flex:1"><div style="font-weight:600">${esc(p.Name)}</div><div class="small ${rainFlag ? "warn-t" : "muted"}">${rainFlag
+          ? `Skips if today's rain reaches ${p["Rain skip mm"]} mm (${Number(rain).toFixed(1)} mm so far)` : esc(sub)}</div></div>
+        <span class="small ${cls}" style="font-weight:600">${status}</span></div>` });
+    }
+  }
+  items.sort((a, b) => a.time.localeCompare(b.time));
+  $("plan").innerHTML = state.programsMissing ? `<p class="small muted">Programs aren't set up in the database yet.</p>`
+    : items.map(i => i.html).join("") || `<p class="small muted">No programs run today.</p>`;
+
+  // Weather tiles
+  const w = state.weather;
+  const v = (x, unit, dp = 1) => x == null ? "–" : `${Number(x).toFixed(dp)}<span class="small muted"> ${unit}</span>`;
+  $("weatherTiles").innerHTML = w ? `
+    <div class="tile"><div class="tiny muted">Rain today</div><div class="v">${v(w["Rain day mm"], "mm")}</div></div>
+    <div class="tile"><div class="tiny muted">Now</div><div class="v">${v(w["Temp C"], "°", 1)}</div><div class="tiny muted">${w["RH pct"] ?? "–"}% humidity</div></div>
+    <div class="tile"><div class="tiny muted">Wind</div><div class="v">${v(w["Wind m/s"] == null ? null : w["Wind m/s"] * 3.6, "km/h", 0)}</div><div class="tiny muted">${ago(w["Observed at"])}</div></div>` : "";
+
+  // Device summary
+  const sum = [];
+  const line = (name, ok, words) => `<div class="between small"><span>${esc(name)}</span><span class="${ok ? "ok-t" : "bad-t"}" style="font-weight:600">${esc(words)}</span></div>`;
+  const b = bridge();
+  sum.push(line("Shed PC (bridge)", alive, alive ? "OK · " + ago(b["Last seen"]) : "not checking in"));
+  for (const d of state.devices.filter(d => d.id !== "bridge" && !d.id.startsWith("mock-"))) {
+    const extra = d["Battery pct"] != null ? `battery ${d["Battery pct"]}%` : d.Raw?.rssi_dbm != null ? `signal ${signalWords(d.Raw.rssi_dbm)}` : "";
+    sum.push(line(d.Name || d.id, d.Online, d.Online ? "OK" + (extra ? " · " + extra : "") : "offline"));
+  }
+  $("deviceSummary").innerHTML = sum.join("");
+  $("updated").textContent = "Updated " + fmtTime(state.loadedAt);
+  $("stopAll").disabled = !alive;
+  $("runProgramBtn").disabled = !alive || !programsOn() || !state.programs.length;
+  $("rainDelayBtn").disabled = !alive || !controllable("Rain Bird");
+}
+
+function signalWords(rssi) { return rssi >= -60 ? "good" : rssi >= -70 ? "fair" : rssi >= -80 ? "weak" : "very weak"; }
+
+function runsOn(p, t) {
+  if (p["Every days"]) {
+    if (!p["Anchor date"]) return false;
+    const days = Math.round((Date.parse(t.iso) - Date.parse(p["Anchor date"])) / 86400000);
+    return days >= 0 ? days % p["Every days"] === 0 : (-days) % p["Every days"] === 0;
+  }
+  return (p.Days || []).includes(DAY_KEYS[t.dow]);
+}
+
+function describeWhen(p) {
+  const times = (p["Start times"] || []).join(", ") || "no start time";
+  if (p["Every days"]) return `Every ${p["Every days"]} days · ${times}`;
+  const d = p.Days || [];
+  const words = d.length === 7 ? "Every day" : d.length ? DAY_KEYS.filter(k => d.includes(k)).map(k => k[0].toUpperCase() + k.slice(1)).join(", ") : "No days chosen";
+  return `${words} · ${times}`;
+}
+
+function renderPrograms() {
+  const off = [];
+  if (state.programsMissing) off.push(`<div class="banner warn">Programs need a small database update before they can be saved. Ask Claude to apply it.</div>`);
+  else if (bridge() && !programsOn()) off.push(`<div class="banner info">Programs are switched off on the shed PC for now: you can set them up, but they won't run until they're tested on site.</div>`);
+  $("programsOff").innerHTML = off.join("");
+  $("newProgram").disabled = state.programsMissing;
+  const live = runningPrograms();
+  $("programList").innerHTML = state.programs.map(p => {
+    const steps = p.Steps || [];
+    const mins = steps.reduce((a, s) => a + Number(s.minutes || 0), 0);
+    const running = live.some(r => r.program === p.id);
+    const pill = running ? `<span class="pill blue">Running</span>` : p.Enabled ? `<span class="pill ok">On</span>` : `<span class="pill">Off</span>`;
+    const extra = p["Rain skip mm"] != null ? `Skips after ${p["Rain skip mm"]} mm of rain` : "Waters whatever the rain";
+    return `<button class="prog" data-edit="${esc(p.id)}">
+      <div class="between"><b>${esc(p.Name)}</b>${pill}</div>
+      <div class="small" style="color:var(--ink-2);margin-top:4px">${esc(describeWhen(p))}</div>
+      <div class="small muted">${steps.length ? esc(steps.map(s => shortZone(s.zone)).join(", ")) + ` · ${mins} min` : "No zones yet"}</div>
+      <div class="small muted">${esc(extra)}</div></button>`;
+  }).join("") || (state.programsMissing ? "" : `<p class="muted" style="margin-top:16px">No programs yet. Tap New program to make the first one.</p>`);
+}
+
+// ---------------------------------------------------------------- program editor
+
+function blankProgram() {
+  return { id: null, Name: "", Enabled: false, Days: [], "Every days": null, "Anchor date": null,
+           "Start times": ["06:00"], Steps: [], "Rain skip mm": null, "Retry minutes": 60, "Notify finish": false };
+}
+
+function openEditor(p) {
+  editing = JSON.parse(JSON.stringify(p));
+  editing.Steps = editing.Steps || []; editing["Start times"] = editing["Start times"] || []; editing.Days = editing.Days || [];
+  $("editTitle").textContent = p.id ? "Edit program" : "New program";
+  $("pName").value = editing.Name;
+  $("pEnabled").checked = !!editing.Enabled;
+  const every = !!editing["Every days"];
+  document.querySelector(`input[name=pMode][value=${every ? "every" : "days"}]`).checked = true;
+  $("pEveryN").value = String(editing["Every days"] || 2);
+  $("pAnchor").value = editing["Anchor date"] || farmToday().iso;
+  $("pRain").value = editing["Rain skip mm"] ?? "";
+  $("pRetry").value = editing["Retry minutes"] ?? 60;
+  $("pNotify").checked = !!editing["Notify finish"];
+  $("editRun").classList.toggle("hidden", !p.id);
+  $("editDelete").classList.toggle("hidden", !p.id);
+  $("editRun").disabled = !bridgeAlive() || !programsOn();
+  drawEditor();
+  tab = "edit"; render(); window.scrollTo(0, 0);
+}
+
+function controlZones() { return state.zones.filter(z => z.Controller && z["Max minutes"]); }
+
+function drawEditor() {
+  const every = document.querySelector("input[name=pMode]:checked").value === "every";
+  $("pDays").classList.toggle("hidden", every);
+  $("pEvery").classList.toggle("hidden", !every);
+  $("pDays").innerHTML = DAY_KEYS.map((k, i) => `<button type="button" class="${editing.Days.includes(k) ? "on" : ""}" data-day="${k}" aria-pressed="${editing.Days.includes(k)}" aria-label="${k}">${DAY_LETTERS[i]}</button>`).join("");
+  $("pTimes").innerHTML = editing["Start times"].map((t, i) => `<span class="row" style="gap:4px"><input type="time" value="${esc(t)}" data-time="${i}" aria-label="Start time ${i + 1}"><button type="button" class="plain" data-deltime="${i}" aria-label="Remove this time" style="min-width:40px;padding:0">✕</button></span>`).join("")
+    + `<button type="button" class="ghost" id="addTime">Add a time</button>`;
+  const zones = controlZones();
+  $("pSteps").innerHTML = editing.Steps.map((s, i) => {
+    const z = state.zones.find(z => z.id === s.zone);
+    const cap = Math.min(z?.["Max minutes"] || 0, farmMax());
+    return `<div class="steprow"><span class="small muted" style="width:18px">${i + 1}</span>
+      <select data-stepzone="${i}" aria-label="Zone ${i + 1}">${zones.map(z => `<option value="${esc(z.id)}" ${z.id === s.zone ? "selected" : ""}>${esc(z.Name)}</option>`).join("")}</select>
+      <input type="number" min="1" max="${cap}" inputmode="numeric" value="${esc(s.minutes)}" data-stepmin="${i}" aria-label="Minutes for zone ${i + 1}">
+      <button type="button" class="plain" data-stepup="${i}" ${i ? "" : "disabled"} aria-label="Move up">↑</button>
+      <button type="button" class="plain" data-stepdel="${i}" aria-label="Remove zone">✕</button></div>`;
+  }).join("") || `<p class="small muted" style="margin:0">No zones yet.</p>`;
+  const mins = editing.Steps.reduce((a, s) => a + Number(s.minutes || 0), 0);
+  $("pTotal").textContent = editing.Steps.length ? `${mins} min in all` : "";
+}
+
+function readEditor() {
+  const every = document.querySelector("input[name=pMode]:checked").value === "every";
+  const rain = $("pRain").value.trim();
+  return {
+    Name: $("pName").value.trim(), Enabled: $("pEnabled").checked,
+    Days: every ? [] : DAY_KEYS.filter(k => editing.Days.includes(k)),
+    "Every days": every ? Number($("pEveryN").value) : null,
+    "Anchor date": every ? $("pAnchor").value || farmToday().iso : null,
+    "Start times": [...new Set(editing["Start times"].filter(Boolean))].sort(),
+    Steps: editing.Steps.map(s => ({ zone: s.zone, minutes: Number(s.minutes) })),
+    "Rain skip mm": rain === "" ? null : Number(rain),
+    "Retry minutes": Math.max(0, Math.min(240, Number($("pRetry").value) || 0)),
+    "Notify finish": $("pNotify").checked,
+    "Updated at": new Date().toISOString(), "Updated by": who(),
+  };
+}
+
+function checkProgram(p) {
+  if (!p.Name) return "Give it a name.";
+  if (!p.Steps.length) return "Add at least one zone.";
+  for (const [i, s] of p.Steps.entries()) {
+    const z = state.zones.find(z => z.id === s.zone);
+    const cap = Math.min(z?.["Max minutes"] || 0, farmMax());
+    if (!(s.minutes > 0 && s.minutes <= cap)) return `Zone ${i + 1} (${z?.Name || "?"}): enter 1 to ${cap} minutes.`;
+  }
+  if (p.Enabled && !p["Start times"].length) return "Add a start time, or turn the program off.";
+  if (p.Enabled && !p["Every days"] && !p.Days.length) return "Pick at least one day, or turn the program off.";
+  if (p["Rain skip mm"] != null && !(p["Rain skip mm"] >= 0)) return "Rain skip must be 0 or more mm.";
+  return null;
+}
+
 document.addEventListener("input", e => {
+  const d = e.target.dataset;
   if (e.target.id?.startsWith("min-")) typedMinutes[e.target.id.slice(4)] = e.target.value;
+  if (!editing) return;
+  if (d.time != null) editing["Start times"][+d.time] = e.target.value;
+  if (d.stepmin != null) { editing.Steps[+d.stepmin].minutes = e.target.value; $("pTotal").textContent = `${editing.Steps.reduce((a, s) => a + Number(s.minutes || 0), 0)} min in all`; }
 });
+document.addEventListener("change", e => {
+  const d = e.target.dataset;
+  if (editing && d.stepzone != null) editing.Steps[+d.stepzone].zone = e.target.value;
+  if (e.target.name === "pMode") drawEditor();
+});
+
+// ---------------------------------------------------------------- zones
+
+let zonesStale = false;
 document.addEventListener("focusout", e => {
   if (e.target.id?.startsWith("min-") && zonesStale) {
     zonesStale = false;
-    // Let a tap on that zone's Start button land before the cards are rebuilt.
     setTimeout(() => { if (!document.activeElement?.id?.startsWith("min-")) renderZones(); }, 250);
   }
 });
@@ -304,7 +638,6 @@ function stopping(zoneId) {
   return state.commands.some(c => ["pending", "sent"].includes(c.Status) &&
     (c.Action === "stop_all" || (c.Action === "stop" && c.Zone === zoneId)));
 }
-
 function openCommandFor(zoneId) {
   return state.commands.find(c => c.Zone === zoneId && ["pending", "sent", "running"].includes(c.Status));
 }
@@ -313,13 +646,11 @@ function renderZones() {
   const watering = wateringByZone();
   const lastRun = {};
   for (const e of state.events) if (!lastRun[e.Zone]) lastRun[e.Zone] = e;
-  const farmMax = bridge()?.Raw?.max_run_minutes || 120;
   const alive = bridgeAlive();
-
   const OTHER = "Greenhouses & nursery";
   const groups = new Map();
   for (const z of state.zones) {
-    if (!z.Controller) continue;   // not linked to a valve: nothing to control here
+    if (!z.Controller) continue;
     const g = z.Block ? "Block " + z.Block : OTHER;
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push(z);
@@ -328,112 +659,90 @@ function renderZones() {
 
   let html = "";
   for (const [g, zones] of groups) {
-    html += `<div class="block"><h3>${esc(g)}</h3>`;
+    html += `<div class="block-h">${esc(g)}</div>`;
     for (const z of zones) {
       const w = watering[z.id];
-      const cap = Math.min(z["Max minutes"] || 0, farmMax);
+      const cap = Math.min(z["Max minutes"] || 0, farmMax());
       const outlet = z.Controller === "Rain Bird" ? `station ${z.Station}` : "valve";
       const canControl = controllable(z.Controller) && cap > 0;
       const open = openCommandFor(z.id);
       const last = lastRun[z.id];
       const by = w ? startedBy(z, w) : "";
       const prefix = "Watering" + (by ? " · " + by : "");
-      const stateText = w ? `${prefix}${w.left != null ? " · " + mmss(w.left) + " left" : ""}` : "Idle";
-
       let actions;
-      if (!canControl) {
-        actions = `<span class="pill">${controllable(z.Controller) ? "No Max minutes set" : "Watch only for now"}</span>`;
-      } else if (w && stopping(z.id)) {
-        actions = `<span class="pill">Stopping…</span>`;   // one Stop is enough; no second button to tap
-      } else if (w) {
-        actions = `<button class="danger" data-stop="${esc(z.id)}" ${alive ? "" : "disabled"}>Stop</button>`;
-      } else if (open) {
-        actions = "";   // a start or stop is on its way; its progress shows above
-      } else {
-        actions = `<input type="number" inputmode="numeric" min="1" max="${cap}" value="${esc(typedMinutes[z.id] ?? Math.min(DEFAULT_MINUTES, cap))}" id="min-${esc(z.id)}" aria-label="Minutes">
-                   <span class="small muted">min (max ${cap})</span>
-                   <button class="primary" data-start="${esc(z.id)}" ${alive && !open ? "" : "disabled"}>Start</button>`;
-      }
-      html += `<div class="card zone ${w ? "watering" : ""}" data-zone="${esc(z.id)}">
-        <div class="row"><span class="name">${esc(z.Name)}</span><span class="spacer"></span>
-          <span class="state" data-prefix="${esc(prefix)}" data-left="${w && w.left != null ? Date.now() + w.left * 1000 : ""}">${esc(stateText)}</span></div>
+      if (!canControl) actions = `<span class="pill">${controllable(z.Controller) ? "No Max minutes set" : "Watch only for now"}</span>`;
+      else if (w && stopping(z.id)) actions = `<span class="pill">Stopping…</span>`;
+      else if (w) actions = `<button class="danger" data-stop="${esc(z.id)}" ${alive ? "" : "disabled"}>Stop</button>`;
+      else if (open) actions = "";
+      else actions = `<input type="number" inputmode="numeric" min="1" max="${cap}" value="${esc(typedMinutes[z.id] ?? Math.min(DEFAULT_MINUTES, cap))}" id="min-${esc(z.id)}" aria-label="Minutes for ${esc(z.Name)}">
+                   <span class="small muted">min (max ${cap})</span><span class="spacer"></span>
+                   <button class="primary" data-start="${esc(z.id)}" ${alive ? "" : "disabled"}>Water</button>`;
+      html += `<div class="zonecard ${w ? "watering" : ""}">
+        <div class="between"><b>${esc(z.Name)}</b>
+          <span class="small ${w ? "blue-t" : "muted"} zstate" data-prefix="${esc(prefix)}" data-left="${w && w.left != null ? Date.now() + w.left * 1000 : ""}" style="font-weight:600">${w ? esc(prefix) + (w.left != null ? " · " + mmss(w.left) + " left" : "") : "Idle"}</span></div>
         <div class="small muted">${esc(z.Controller)} ${esc(outlet)}${last ? ` · last ran ${ago(last["Started at"] || last["Created at"])} for ${last.Minutes} min` : ""}</div>
-        ${open ? `<div class="cmd status-${esc(open.Status)}">${esc(describeCommand(open))}</div>` : ""}
-        <div class="row actions">${actions}</div>
-      </div>`;
+        ${open ? `<div class="small status-${esc(open.Status)}" style="margin-top:6px">${esc(describeCommand(open))}</div>` : ""}
+        <div class="row" style="margin-top:10px">${actions}</div></div>`;
     }
-    html += `</div>`;
   }
   $("zones").innerHTML = html || `<p class="muted">No zones are linked to a controller yet.</p>`;
 }
 
 function describeCommand(c) {
+  const prog = state.programs.find(p => p.id === c.Program)?.Name || "program";
   const what = c.Action === "start" ? `Start for ${c.Minutes} min` : c.Action === "stop" ? "Stop"
-    : c.Action === "stop_all" ? "Stop all" : `Rain delay ${c.Days} day(s)`;
-  const words = { pending: "waiting for the bridge", sent: "being sent", running: "running",
+    : c.Action === "stop_all" ? "Stop everything" : c.Action === "run_program" ? `Run ${prog}`
+    : c.Action === "stop_program" ? `Stop ${prog}` : `Rain delay ${c.Days} day(s)`;
+  const words = { pending: "waiting for the shed PC", sent: "being sent", running: "running",
                   done: "done", failed: "failed", rejected: "refused", expired: "expired" };
   return `${what}: ${words[c.Status] || c.Status}${c.Result && c.Status !== "pending" ? " · " + c.Result : ""}`;
 }
 
-function renderWeather() {
-  const w = state.weather;
-  if (!w) { $("weather").innerHTML = `<p class="muted">No readings yet.</p>`; return; }
-  const v = (x, unit, dp = 1) => x == null ? "–" : `${Number(x).toFixed(dp)}<span class="small muted"> ${unit}</span>`;
-  $("weather").innerHTML = `
-    <div class="weather">
-      <div><div class="small muted">Temperature</div><div class="v">${v(w["Temp C"], "°C")}</div></div>
-      <div><div class="small muted">Humidity</div><div class="v">${v(w["RH pct"], "%", 0)}</div></div>
-      <div><div class="small muted">Wind</div><div class="v">${v(w["Wind m/s"] == null ? null : w["Wind m/s"] * 3.6, "km/h", 0)}</div></div>
-      <div><div class="small muted">Gusts</div><div class="v">${v(w["Wind gust m/s"] == null ? null : w["Wind gust m/s"] * 3.6, "km/h", 0)}</div></div>
-      <div><div class="small muted">Rain today</div><div class="v">${v(w["Rain day mm"], "mm")}</div></div>
-      <div><div class="small muted">Sun</div><div class="v">${v(w["Solar W/m2"], "W/m²", 0)}</div></div>
-    </div>
-    <p class="small muted" style="margin:10px 0 0">Reading from ${fmtTime(w["Observed at"])} (${ago(w["Observed at"])})${w["Rain rate mm/hr"] > 0 ? ` · raining ${w["Rain rate mm/hr"]} mm/hr` : ""}</p>`;
+function renderEvents() {
+  $("events").innerHTML = state.events.length ? state.events.map(e => `<tr>
+      <td class="small muted" style="white-space:nowrap">${fmtDay(e["Started at"] || e.Date)}<br>${e["Started at"] ? fmtTime(e["Started at"]) : ""}</td>
+      <td>${esc(zoneName(e.Zone))}<div class="small muted">${e.Minutes} min${e.Source === "bridge-observed" ? " · the controller's own schedule" : ""}${e.By ? " · " + esc(e.By) : ""}</div></td></tr>`).join("")
+    : `<tr><td class="muted">No runs recorded yet.</td></tr>`;
 }
 
-function renderDevices() {
+// ---------------------------------------------------------------- health
+
+function renderHealth() {
+  $("healthBanners").innerHTML = bannersHtml();
   const order = ["bridge", "rainbird", "linktap-gw", "ecowitt"];
   const rank = d => { const id = d.id.replace(/^mock-/, ""); const i = order.indexOf(id); return i < 0 ? 10 : i; };
   const devs = [...state.devices].sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
   $("devices").innerHTML = devs.map(d => {
-    const stale = d.id === "bridge" ? !bridgeAlive() : false;
-    const ok = d.Online && !stale;
+    const ok = d.Online && (d.id !== "bridge" || bridgeAlive());
     const bits = [];
+    if (d.id === "bridge") {
+      bits.push(programsOn() ? "programs on" : "programs off");
+      if (d.Raw?.version) bits.push("v" + d.Raw.version);
+    }
     if (d["Battery pct"] != null) bits.push(`battery ${d["Battery pct"]}%`);
-    const rssi = d.Raw?.rssi_dbm;
-    if (rssi != null) {
-      const words = rssi >= -60 ? "good" : rssi >= -70 ? "fair" : rssi >= -80 ? "weak" : "very weak";
-      bits.push(`WiFi ${rssi} dBm (${words})`);
-    } else if (d["Signal pct"] != null) bits.push(`signal ${d["Signal pct"]}%`);
+    if (d.Raw?.rssi_dbm != null) bits.push(`WiFi ${d.Raw.rssi_dbm} dBm (${signalWords(d.Raw.rssi_dbm)})`);
+    else if (d["Signal pct"] != null) bits.push(`radio ${d["Signal pct"]}%`);
+    if (d["Rain delay days"]) bits.push(`rain delay ${d["Rain delay days"]} day(s)`);
     if (d.Error && d.id !== "bridge") bits.push(esc(d.Error));
     bits.push(d["Last seen"] ? "seen " + ago(d["Last seen"]) : "not seen yet");
-    return `<div class="card"><div class="row"><span class="dot ${ok ? "ok" : "bad"}"></span><b>${esc(d.Name || d.id)}</b></div>
-            <div class="small muted">${bits.join(" · ")}</div></div>`;
+    return `<div class="between" style="border-top:1px solid var(--soft);padding-top:10px">
+      <div><b>${esc(d.Name || d.id)}</b><div class="small muted">${bits.join(" · ")}</div></div>
+      <span class="pill ${ok ? "ok" : "bad"}">${ok ? "OK" : "Offline"}</span></div>`;
   }).join("");
-}
-
-function zoneName(id) { return state.zones.find(z => z.id === id)?.Name || ""; }
-
-function renderCommands() {
-  $("commands").innerHTML = state.commands.length ? state.commands.map(c => `<tr>
+  $("commands").innerHTML = state.commands.length ? state.commands.slice(0, 25).map(c => `<tr>
       <td class="small muted" style="white-space:nowrap">${fmtTime(c["Requested at"])}</td>
       <td>${esc(zoneName(c.Zone) || (c.Action === "stop_all" ? "All zones" : ""))}<div class="small status-${esc(c.Status)}">${esc(describeCommand(c))}</div></td>
       <td class="small muted">${esc(c["Requested by"] || "")}</td></tr>`).join("")
     : `<tr><td class="muted">No requests in the last 3 days.</td></tr>`;
 }
 
-function renderEvents() {
-  $("events").innerHTML = state.events.length ? state.events.map(e => `<tr>
-      <td class="small muted" style="white-space:nowrap">${fmtDay(e["Started at"] || e.Date)}<br>${e["Started at"] ? fmtTime(e["Started at"]) : ""}</td>
-      <td>${esc(zoneName(e.Zone))}<div class="small muted">${e.Minutes} min${e.Source === "bridge-observed" ? " · started by the controller" : ""}${e.By ? " · " + esc(e.By) : ""}</div></td></tr>`).join("")
-    : `<tr><td class="muted">No runs recorded by the bridge yet.</td></tr>`;
-}
-
 // Count down "time left" between reloads.
 setInterval(() => {
-  for (const el of document.querySelectorAll(".state[data-left]")) {
+  for (const el of document.querySelectorAll("[data-left]")) {
     const end = Number(el.dataset.left);
-    if (end) el.textContent = el.dataset.prefix + " · " + mmss((end - Date.now()) / 1000) + " left";
+    if (!end) continue;
+    const left = (end - Date.now()) / 1000;
+    el.textContent = el.classList.contains("zstate") ? el.dataset.prefix + " · " + mmss(left) + " left" : mmss(left);
   }
 }, 1000);
 
@@ -443,34 +752,95 @@ function who() { return ($("who").value || "").trim() || "app"; }
 
 async function request(fields) {
   const { error } = await sb.from("irrigation_commands").insert({ ...fields, "Requested by": who() });
-  if (error) { alert("Couldn't send that request:\n" + error.message); return; }
+  if (error) { alert("Couldn't send that request:\n" + error.message); return false; }
   await load();
+  return true;
 }
 
 document.addEventListener("click", async e => {
   const t = e.target.closest("button");
   if (!t) return;
-  if (t.dataset.start) {
-    const z = state.zones.find(z => z.id === t.dataset.start);
+  const d = t.dataset;
+  if (d.tab) { tab = d.tab; editing = null; render(); window.scrollTo(0, 0); return; }
+  if (d.start) {
+    const z = state.zones.find(z => z.id === d.start);
     const minutes = Number($("min-" + z.id).value);
-    const cap = Math.min(z["Max minutes"] || 0, bridge()?.Raw?.max_run_minutes || 120);
+    const cap = Math.min(z["Max minutes"] || 0, farmMax());
     if (!(minutes > 0 && minutes <= cap)) { alert(`Enter between 1 and ${cap} minutes.`); return; }
     t.disabled = true;
     await request({ Zone: z.id, Action: "start", Minutes: minutes });
-  } else if (t.dataset.stop) {
+  } else if (d.stop) {
     t.disabled = true;
-    if (stopping(t.dataset.stop)) return;   // already on its way
-    await request({ Zone: t.dataset.stop, Action: "stop" });
-  } else if (t.dataset.ack) {
+    if (!stopping(d.stop)) await request({ Zone: d.stop, Action: "stop" });
+  } else if (d.stopprog) {
+    if (!confirm("Stop this program? The zone watering now stops and the rest are skipped.")) return;
+    t.disabled = true;
+    await request({ Action: "stop_program", Program: d.stopprog });
+  } else if (d.ack) {
     t.disabled = true;
     const { error } = await sb.from("irrigation_alerts")
-      .update({ "Acknowledged by": who(), "Acknowledged at": new Date().toISOString() }).eq("id", t.dataset.ack);
+      .update({ "Acknowledged by": who(), "Acknowledged at": new Date().toISOString() }).eq("id", d.ack);
     if (error) alert(error.message);
     await load();
   } else if (t.id === "stopAll") {
-    if (!confirm("Stop every zone now?")) return;
+    if (!confirm("Stop every zone now? Programs under way are stopped too.")) return;
     t.disabled = true;
     await request({ Action: "stop_all" });
+  } else if (t.id === "rainDelayBtn") {
+    const days = prompt("Pause the Rain Bird's own programs for how many days? (0 cancels a rain delay, up to 14)", "1");
+    if (days == null) return;
+    const n = Number(days);
+    if (!(Number.isInteger(n) && n >= 0 && n <= 14)) { alert("Enter a whole number from 0 to 14."); return; }
+    await request({ Action: "rain_delay", Days: n });
+  } else if (t.id === "runProgramBtn") {
+    const list = state.programs.filter(p => (p.Steps || []).length);
+    const pick = prompt("Run which program now?\n" + list.map((p, i) => `${i + 1}. ${p.Name}`).join("\n"), "1");
+    const p = list[Number(pick) - 1];
+    if (pick == null) return;
+    if (!p) { alert("Enter the number of a program."); return; }
+    await request({ Action: "run_program", Program: p.id });
+  } else if (d.edit) {
+    openEditor(state.programs.find(p => p.id === d.edit));
+  } else if (t.id === "newProgram") {
+    openEditor(blankProgram());
+  } else if (t.id === "editBack") {
+    editing = null; tab = "programs"; render();
+  } else if (d.day) {
+    editing.Days = editing.Days.includes(d.day) ? editing.Days.filter(x => x !== d.day) : [...editing.Days, d.day];
+    drawEditor();
+  } else if (t.id === "addTime") {
+    editing["Start times"].push(""); drawEditor();
+  } else if (d.deltime != null) {
+    editing["Start times"].splice(+d.deltime, 1); drawEditor();
+  } else if (t.id === "addStep") {
+    const zones = controlZones();
+    if (!zones.length) { alert("No zones are ready to control yet."); return; }
+    const used = new Set(editing.Steps.map(s => s.zone));
+    const z = zones.find(z => !used.has(z.id)) || zones[0];
+    editing.Steps.push({ zone: z.id, minutes: Math.min(DEFAULT_MINUTES, z["Max minutes"]) }); drawEditor();
+  } else if (d.stepdel != null) {
+    editing.Steps.splice(+d.stepdel, 1); drawEditor();
+  } else if (d.stepup != null) {
+    const i = +d.stepup; [editing.Steps[i - 1], editing.Steps[i]] = [editing.Steps[i], editing.Steps[i - 1]]; drawEditor();
+  } else if (t.id === "editSave") {
+    const p = readEditor();
+    const why = checkProgram(p);
+    if (why) { alert(why); return; }
+    t.disabled = true;
+    const q = editing.id ? sb.from("irrigation_programs").update(p).eq("id", editing.id)
+                         : sb.from("irrigation_programs").insert(p);
+    const { error } = await q;
+    t.disabled = false;
+    if (error) { alert("Couldn't save:\n" + error.message); return; }
+    editing = null; tab = "programs"; await load();
+  } else if (t.id === "editDelete") {
+    if (!confirm(`Delete "${editing.Name}"? This can't be undone.`)) return;
+    const { error } = await sb.from("irrigation_programs").delete().eq("id", editing.id);
+    if (error) { alert("Couldn't delete:\n" + error.message); return; }
+    editing = null; tab = "programs"; await load();
+  } else if (t.id === "editRun") {
+    if (!confirm(`Run "${editing.Name}" now (the saved version)?`)) return;
+    if (await request({ Action: "run_program", Program: editing.id })) { editing = null; tab = "today"; render(); }
   } else if (t.id === "logout") {
     await sb.auth.signOut();
     showLogin();
@@ -498,7 +868,8 @@ async function startApp() {
   await load();
   if (!channel) {
     channel = sb.channel("irrigation");
-    for (const table of ["device_status", "irrigation_commands", "irrigation_events", "irrigation_alerts", "weather_readings", "irrigation_zones"]) {
+    for (const table of ["device_status", "irrigation_commands", "irrigation_events", "irrigation_alerts",
+                         "weather_readings", "irrigation_zones", "irrigation_programs"]) {
       channel.on("postgres_changes", { event: "*", schema: "public", table }, reloadSoon);
     }
     channel.subscribe();
@@ -517,8 +888,9 @@ $("loginForm").addEventListener("submit", async e => {
 });
 
 // Belt and braces under realtime: refresh every minute, and whenever the app comes back on screen.
-setInterval(() => { if (!document.hidden && !$("app").classList.contains("hidden")) load().catch(showError); }, 60000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("app").classList.contains("hidden")) load().catch(showError); });
+// Not while a program is being edited, so a refresh never redraws the form under someone's thumb.
+setInterval(() => { if (!document.hidden && !$("app").classList.contains("hidden") && !editing) load().catch(showError); }, 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("app").classList.contains("hidden") && !editing) load().catch(showError); });
 
 sb.auth.getSession().then(({ data }) => data.session ? startApp().catch(showError) : showLogin());
 </script>
