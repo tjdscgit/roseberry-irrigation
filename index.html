@@ -110,7 +110,8 @@ header.top { padding:20px 0 4px; }
 .steprow input { width:70px; }
 .steprow button { min-width:40px; padding:0 8px; }
 .field { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; color:var(--ink-2); }
-.field input, .field select { font-weight:400; font-size:16px; }
+.field input, .field select, .field textarea { font-weight:400; font-size:16px; }
+.field textarea { font-family:inherit; border:1px solid var(--line, #ccc); border-radius:10px; padding:10px; background:transparent; color:inherit; }
 .switchrow { display:flex; justify-content:space-between; align-items:center; gap:12px; font-size:14px; }
 .switchrow input[type=number] { width:84px; }
 
@@ -218,6 +219,30 @@ nav.tabs svg { width:22px; height:22px; }
       <button id="editRun">Run now</button>
       <button class="danger" id="editDelete">Delete</button>
     </div>
+    <div style="height:20px"></div>
+  </div>
+
+  <!-- ============================================================ Zone editor -->
+  <div id="tab-zedit" class="wrap hidden">
+    <header class="top between">
+      <button class="plain" id="zBack">Back</button>
+      <h2>Edit zone</h2>
+      <button class="primary" id="zSave">Save</button>
+    </header>
+    <section class="card stack">
+      <label class="field">Name <input id="zName" maxlength="60"></label>
+      <div class="switchrow"><span>Longest run allowed<br><span class="small muted">Any run or program step is capped at this</span></span>
+        <span class="row" style="gap:6px"><input type="number" id="zMax" min="1" max="240" step="1" inputmode="numeric" aria-label="Max minutes"> min</span></div>
+      <div class="switchrow"><span><b>Under cover: ignore rain</b><br><span class="small muted">Programs still water this zone after rain or during a rain delay</span></span>
+        <input type="checkbox" id="zCover" aria-label="Ignore rain"></div>
+      <div class="switchrow">Expected flow <span class="row" style="gap:6px"><input type="number" id="zFlow" min="0" step="10" inputmode="decimal" placeholder="unknown" aria-label="Expected flow litres per hour"> L/hr</span></div>
+      <label class="field">Notes <textarea id="zNotes" rows="3" maxlength="500"></textarea></label>
+    </section>
+    <section class="card stack">
+      <h2>Wiring</h2>
+      <span class="small" id="zWire"></span>
+      <span class="small muted">Which valve a zone opens is set on the shed PC side only, so a slip on the phone can never point a zone at the wrong valve.</span>
+    </section>
     <div style="height:20px"></div>
   </div>
 
@@ -366,8 +391,8 @@ function startedBy(zone, w) {
 // ---------------------------------------------------------------- render
 
 function render() {
-  for (const t of ["today", "programs", "edit", "zones", "health"]) $("tab-" + t).classList.toggle("hidden", t !== tab);
-  for (const b of document.querySelectorAll("nav.tabs button")) b.classList.toggle("on", b.dataset.tab === (tab === "edit" ? "programs" : tab));
+  for (const t of ["today", "programs", "edit", "zedit", "zones", "health"]) $("tab-" + t).classList.toggle("hidden", t !== tab);
+  for (const b of document.querySelectorAll("nav.tabs button")) b.classList.toggle("on", b.dataset.tab === (tab === "edit" ? "programs" : tab === "zedit" ? "zones" : tab));
   renderToday();
   renderPrograms();
   if (document.activeElement?.id?.startsWith("min-")) zonesStale = true; else renderZones();
@@ -627,6 +652,7 @@ document.addEventListener("change", e => {
 // ---------------------------------------------------------------- zones
 
 let zonesStale = false;
+let zEditing = null;
 document.addEventListener("focusout", e => {
   if (e.target.id?.startsWith("min-") && zonesStale) {
     zonesStale = false;
@@ -678,11 +704,11 @@ function renderZones() {
                    <span class="small muted">min (max ${cap})</span><span class="spacer"></span>
                    <button class="primary" data-start="${esc(z.id)}" ${alive ? "" : "disabled"}>Water</button>`;
       html += `<div class="zonecard ${w ? "watering" : ""}">
-        <div class="between"><b>${esc(z.Name)}</b>
+        <div class="between"><span><b>${esc(z.Name)}</b>${z["Ignore rain"] ? ' <span class="pill">under cover</span>' : ""}</span>
           <span class="small ${w ? "blue-t" : "muted"} zstate" data-prefix="${esc(prefix)}" data-left="${w && w.left != null ? Date.now() + w.left * 1000 : ""}" style="font-weight:600">${w ? esc(prefix) + (w.left != null ? " · " + mmss(w.left) + " left" : "") : "Idle"}</span></div>
         <div class="small muted">${esc(z.Controller)} ${esc(outlet)}${last ? ` · last ran ${ago(last["Started at"] || last["Created at"])} for ${last.Minutes} min` : ""}</div>
         ${open ? `<div class="small status-${esc(open.Status)}" style="margin-top:6px">${esc(describeCommand(open))}</div>` : ""}
-        <div class="row" style="margin-top:10px">${actions}</div></div>`;
+        <div class="row" style="margin-top:10px">${actions}${w ? "" : `<button class="plain" data-zedit="${esc(z.id)}">Edit</button>`}</div></div>`;
     }
   }
   $("zones").innerHTML = html || `<p class="muted">No zones are linked to a controller yet.</p>`;
@@ -799,6 +825,33 @@ document.addEventListener("click", async e => {
     if (pick == null) return;
     if (!p) { alert("Enter the number of a program."); return; }
     await request({ Action: "run_program", Program: p.id });
+  } else if (d.zedit) {
+    const z = state.zones.find(z => z.id === d.zedit);
+    zEditing = z.id;
+    $("zName").value = z.Name || "";
+    $("zMax").value = z["Max minutes"] ?? "";
+    $("zCover").checked = !!z["Ignore rain"];
+    $("zFlow").value = z["Expected flow L/hr"] ?? "";
+    $("zNotes").value = z.Notes || "";
+    $("zWire").textContent = z.Controller === "Rain Bird" ? `Rain Bird station ${z.Station}`
+      : `LinkTap ${z["Device ID"] || "?"}${z.Station ? " outlet " + z.Station : ""}`;
+    tab = "zedit"; render(); window.scrollTo(0, 0);
+  } else if (t.id === "zBack") {
+    zEditing = null; tab = "zones"; render();
+  } else if (t.id === "zSave") {
+    const name = $("zName").value.trim(), max = Number($("zMax").value), flow = $("zFlow").value.trim();
+    if (!name) { alert("Give it a name."); return; }
+    if (!(max >= 1 && max <= 240)) { alert("Longest run must be 1 to 240 minutes."); return; }
+    if (flow !== "" && !(Number(flow) >= 0)) { alert("Flow must be 0 or more."); return; }
+    t.disabled = true;
+    const { error } = await sb.from("irrigation_zones").update({
+      Name: name, "Max minutes": max, "Ignore rain": $("zCover").checked,
+      "Expected flow L/hr": flow === "" ? null : Number(flow), Notes: $("zNotes").value.trim() || null,
+    }).eq("id", zEditing);
+    t.disabled = false;
+    if (error) { alert("Couldn't save:
+" + error.message); return; }
+    zEditing = null; tab = "zones"; await load();
   } else if (d.edit) {
     openEditor(state.programs.find(p => p.id === d.edit));
   } else if (t.id === "newProgram") {
