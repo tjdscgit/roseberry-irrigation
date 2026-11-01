@@ -259,7 +259,7 @@ nav.tabs svg { width:22px; height:22px; }
     <header class="top"><h1>Zones</h1><span class="small muted">Water over the last 7 days: rain + irrigation</span></header>
     <div class="chips" id="zoneChips"></div>
     <div id="zones" class="stack" style="gap:8px"></div>
-    <div class="legend small"><span><i style="background:var(--rain)"></i>Rain</span><span><i style="background:var(--blue)"></i>Irrigation</span><span class="muted">Full bar = 25 mm</span></div>
+    <div class="legend small"><span><i style="background:var(--rain)"></i>Rain</span><span><i style="background:var(--blue)"></i>Irrigation</span><span class="muted" id="fullBar">Full bar = 25 mm</span></div>
     <section class="card stack" style="gap:8px"><h2>Recent runs</h2><div id="zoneRecent" class="stack" style="gap:8px"></div></section>
   </div>
 
@@ -337,7 +337,7 @@ async function load() {
     sb.from("irrigation_programs").select("*").order("Name"),
     sb.from("irrigation_events").select('"Zone","Minutes","Started at"').not("Zone", "is", null)
       .gte('"Started at"', new Date(Date.now() - 7 * 86400000).toISOString()).limit(1000),
-    sb.from("weather_readings").select('"Observed at","Rain day mm"')
+    sb.from("weather_readings").select('"Observed at","Rain day mm","Temp C","RH pct","Wind m/s","Solar W/m2","Pressure hPa"')
       .gte('"Observed at"', new Date(Date.now() - 7 * 86400000).toISOString()).limit(2000),
   ]);
   for (const r of [zones, devices, commands, events, alerts, weather]) {
@@ -350,7 +350,8 @@ async function load() {
   const programsMissing = !!programs.error;
   state = { zones: zones.data, devices: devices.data, commands: commands.data, events: events.data,
             alerts: alerts.data, weather: weather.data[0] || null, programs: programs.data || [],
-            programsMissing, week: week.data || [], rain7: rainLastWeek(rainWeek.data || []), loadedAt: Date.now() };
+            programsMissing, week: week.data || [], rain7: rainLastWeek(rainWeek.data || []), et7: etLastWeek(rainWeek.data || []),
+            wxDays: new Set((rainWeek.data || []).map(r => new Date(r["Observed at"]).toLocaleDateString("en-CA", { timeZone: FARM_TZ }))).size, loadedAt: Date.now() };
   render();
 }
 
@@ -688,6 +689,44 @@ function rainLastWeek(rows) {
   }
   return Object.values(byDay).reduce((a, b) => a + b, 0);
 }
+// Evaporation (reference ETo, FAO-56 hourly Penman-Monteith) from the farm's weather station,
+// added up reading by reading. It's for a short green crop that isn't short of water.
+const FARM_LAT = -28.5, FARM_LON = 152.95, FARM_ELEV_M = 100;
+function etoStep(r, hours, f) {
+  const T = Number(r["Temp C"]), RH = Number(r["RH pct"]), u = Math.max(0, Number(r["Wind m/s"]) || 0);
+  if (!isFinite(T) || !isFinite(RH)) return 0;
+  const Rs = Math.max(0, Number(r["Solar W/m2"]) || 0) * 0.0036;            // MJ/m2 per hour
+  const P = (Number(r["Pressure hPa"]) || 1000) / 10;                        // kPa
+  const es = 0.6108 * Math.exp(17.27 * T / (T + 237.3)), ea = es * RH / 100;
+  const delta = 4098 * es / (T + 237.3) ** 2, gamma = 0.000665 * P;
+  // Sun height now, for clear-sky radiation (how cloudy it is sets the night-time heat loss).
+  const d = new Date(r["Observed at"]);
+  const doy = Math.floor((d - Date.UTC(d.getUTCFullYear(), 0, 0)) / 86400000);
+  const lat = FARM_LAT * Math.PI / 180, dec = 0.409 * Math.sin(2 * Math.PI * doy / 365 - 1.39);
+  const b = 2 * Math.PI * (doy - 81) / 364, sc = 0.1645 * Math.sin(2 * b) - 0.1255 * Math.cos(b) - 0.025 * Math.sin(b);
+  const solarHour = d.getUTCHours() + d.getUTCMinutes() / 60 + FARM_LON / 15 + sc;
+  const w = Math.PI / 12 * (solarHour - 12);
+  const sinH = Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(w);
+  const Ra = Math.max(0, 4.92 * (1 + 0.033 * Math.cos(2 * Math.PI * doy / 365)) * sinH);
+  const Rso = (0.75 + 2e-5 * FARM_ELEV_M) * Ra;
+  if (Rso > 0.05) f.ratio = Math.min(1, Math.max(0.25, Rs / Rso));             // keep the daytime cloudiness for the night
+  const Rnl = 2.043e-10 * (T + 273.16) ** 4 * (0.34 - 0.14 * Math.sqrt(ea)) * (1.35 * f.ratio - 0.35);
+  const Rn = 0.77 * Rs - Rnl, G = (Rs > 0 ? 0.1 : 0.5) * Rn;
+  const et = (0.408 * delta * (Rn - G) + gamma * 37 / (T + 273) * u * (es - ea)) / (delta + gamma * (1 + 0.34 * u));
+  return Math.max(0, et) * hours;
+}
+function etLastWeek(rows) {
+  const sorted = [...rows].sort((a, b) => new Date(a["Observed at"]) - new Date(b["Observed at"]));
+  const f = { ratio: 0.7 };
+  let total = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const next = sorted[i + 1] ? new Date(sorted[i + 1]["Observed at"]) : new Date();
+    const hours = Math.min(0.5, Math.max(0, (next - new Date(sorted[i]["Observed at"])) / 3600000));   // gaps aren't guessed
+    total += etoStep(sorted[i], hours, f);
+  }
+  return total;
+}
+
 // mm per hour: measured if known, else worked out from heads x flow over the area.
 function zoneRate(z) {
   if (z["Measured precipitation mm/hr"]) return Number(z["Measured precipitation mm/hr"]);
@@ -699,19 +738,22 @@ function zoneKind(z) {
   return z.Block && !/tunnel|greenhouse/i.test(z.Name) ? "Field" : "Greenhouses";
 }
 const ZONE_FILTERS = ["All", "Field", "Greenhouses", "Nursery"];
-const FULL_BAR_MM = 25;
+const FULL_BAR_MM = 25;   // used only until there's evaporation to compare against
 let zoneFilter = "All";
 let waterOpen = null;   // zone whose "Water…" row is open
 
 function renderZones() {
   const watering = wateringByZone();
   const alive = bridgeAlive();
+  $("fullBar").textContent = (state.et7 || 0) >= 1
+    ? `Full bar = ${state.et7.toFixed(0)} mm evaporation${state.wxDays < 7 ? ` (${state.wxDays} days of weather so far)` : ""}` : "Full bar = 25 mm";
   $("zoneChips").innerHTML = ZONE_FILTERS.map(f => `<button data-zfilter="${f}" class="${f === zoneFilter ? "on" : ""}">${f}</button>`).join("");
   const mins = {};
   for (const e of state.week || []) mins[e.Zone] = (mins[e.Zone] || 0) + Number(e.Minutes || 0);
   const lastRun = {};
   for (const e of state.events) if (!lastRun[e.Zone]) lastRun[e.Zone] = e;
-  const rain7 = state.rain7 || 0;
+  const rain7 = state.rain7 || 0, et7 = state.et7 || 0;
+  const full = et7 >= 1 ? et7 : FULL_BAR_MM;
 
   const zones = state.zones.filter(z => z.Controller && (zoneFilter === "All" || zoneKind(z) === zoneFilter));
   $("zones").innerHTML = zones.map(z => {
@@ -723,11 +765,13 @@ function renderZones() {
     const rate = zoneRate(z);
     const rain = z["Ignore rain"] ? 0 : rain7;
     const irr = rate ? (mins[z.id] || 0) / 60 * rate : null;
-    const pct = v => Math.min(100, v / FULL_BAR_MM * 100);
+    const pct = v => Math.min(100, v / full * 100);
     const rainW = pct(rain), irrW = irr == null ? 0 : Math.min(100 - rainW, pct(irr));
     const got = (z["Ignore rain"] ? "Under cover · " : `${rain.toFixed(0)} mm rain + `)
       + (irr == null ? `${Math.round(mins[z.id] || 0)} min irrigation` : `${irr.toFixed(0)} mm irrigation`);
 
+    const net = rain + (irr || 0) - et7;
+    const bal = et7 < 1 || irr == null ? "" : `<span style="font-weight:600;color:var(${net >= -4 ? "--ok" : "--warn"})">${net >= 0 ? "+" + net.toFixed(0) + " mm" : (-net).toFixed(0) + " mm short"}</span>`;
     let sub, right;
     if (w) {
       const by = startedBy(z, w);
@@ -751,7 +795,7 @@ function renderZones() {
       ${open ? `<div class="small status-${esc(open.Status)}">${esc(describeCommand(open))}</div>` : ""}
       ${waterRow}
       <div class="wbar" aria-hidden="true"><i style="width:${rainW}%;background:var(--rain)"></i><i style="width:${irrW}%;background:var(--blue)"></i></div>
-      <div class="small" style="color:var(--ink-2)">${esc(got)}${irr != null && !z["Measured precipitation mm/hr"] ? ' <span class="muted">(estimated)</span>' : ""}</div>
+      <div class="between small" style="color:var(--ink-2)"><span>${esc(got)}${irr != null && !z["Measured precipitation mm/hr"] ? ' <span class="muted">(est.)</span>' : ""}</span>${bal}</div>
     </div>`;
   }).join("") || `<p class="muted">No zones here.</p>`;
 
