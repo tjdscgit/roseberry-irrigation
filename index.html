@@ -104,6 +104,20 @@ header.top { padding:20px 0 4px; }
 .how summary { cursor:pointer; min-height:32px; display:flex; align-items:center; }
 .how p { margin:0; line-height:1.5; }
 .how .formula { background:var(--soft); border-radius:8px; padding:8px 10px; font-weight:600; }
+.qmins { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.qchips { display:flex; gap:6px; }
+.qchips button { min-height:44px; min-width:48px; background:var(--card); color:var(--ink); }
+.qchips button.on { background:var(--ink); color:var(--ground); }
+.qother { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+.qother input { width:76px; }
+.qrow { min-height:56px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--soft); }
+.qrow:last-child { border-bottom:0; }
+.qrow input[type=checkbox] { width:22px; height:22px; min-height:0; accent-color:var(--blue); }
+.qrow input[type=number] { width:64px; }
+.qrow .num { width:22px; text-align:right; font-weight:700; color:var(--blue); }
+.qbar { position:fixed; left:0; right:0; bottom:calc(57px + env(safe-area-inset-bottom)); z-index:9; background:var(--card); border-top:1px solid var(--line);
+        padding:12px 16px; display:flex; flex-direction:column; gap:6px; max-width:560px; margin:0 auto; }
+button.big { min-height:56px; font-size:17px; border-radius:14px; }
 .runrow { display:flex; justify-content:space-between; gap:10px; font-size:14px; }
 .zonecard.watering { outline:2px solid var(--blue); }
 .zonecard input[type=number] { width:80px; }
@@ -172,7 +186,7 @@ nav.tabs svg { width:22px; height:22px; }
     <section class="card">
       <h2>Quick actions</h2>
       <div class="grid2" style="margin-top:10px">
-        <button data-tab="zones">Water a zone</button>
+        <button data-tab="quick">Quick water</button>
         <button id="runProgramBtn">Run a program now</button>
         <button id="rainDelayBtn">Rain delay…</button>
         <button id="stopAll" class="danger">Stop everything</button>
@@ -255,6 +269,27 @@ nav.tabs svg { width:22px; height:22px; }
       <span class="small muted">Which valve a zone opens is set on the shed PC side only, so a slip on the phone can never point a zone at the wrong valve.</span>
     </section>
     <div style="height:20px"></div>
+  </div>
+
+  <!-- ============================================================ Quick water -->
+  <div id="tab-quick" class="wrap hidden" style="padding-bottom:190px">
+    <header class="top between">
+      <button class="plain" data-tab="today">Back</button>
+      <h2>Quick water</h2>
+      <span style="width:60px"></span>
+    </header>
+    <div class="qmins">
+      <span class="small" style="font-weight:600">Each for</span>
+      <div id="qChips" class="qchips"></div>
+      <label class="qother"><input type="number" id="qCustom" min="1" max="240" inputmode="numeric" placeholder="other" aria-label="Other number of minutes"> min</label>
+    </div>
+    <section class="card" style="padding:4px 16px;margin-top:12px" id="qList"></section>
+    <p class="small muted" style="margin:10px 4px 0">Ticked zones run in the order you tick them (the numbers), one at a time. Change a zone's minutes in its box. Rain doesn't skip a run you ask for.</p>
+    <div class="qbar">
+      <span class="small" id="qSummary"></span>
+      <button class="primary big" id="qGo">Water</button>
+      <button class="plain" id="qSave" style="background:transparent;color:var(--blue)">Save as a program…</button>
+    </div>
   </div>
 
   <!-- ============================================================ Zones -->
@@ -386,7 +421,7 @@ function controllable(controller) {
   const c = bridge()?.Raw?.control || {};
   return c[controller] !== false && controller in c;
 }
-function programsOn() { return Array.isArray(bridge()?.Raw?.programs); }
+function programsOn() { const r = bridge()?.Raw; return r?.programs_on ?? Array.isArray(r?.programs); }
 function runningPrograms() { return bridge()?.Raw?.programs || []; }
 function zoneName(id) { return state.zones.find(z => z.id === id)?.Name || ""; }
 function shortZone(id) { return zoneName(id).replace(/^Z\d+\s*[—-]\s*/, "") || id; }
@@ -419,12 +454,13 @@ function startedBy(zone, w) {
 // ---------------------------------------------------------------- render
 
 function render() {
-  for (const t of ["today", "programs", "edit", "zedit", "zones", "health"]) $("tab-" + t).classList.toggle("hidden", t !== tab);
-  for (const b of document.querySelectorAll("nav.tabs button")) b.classList.toggle("on", b.dataset.tab === (tab === "edit" ? "programs" : tab === "zedit" ? "zones" : tab));
+  for (const t of ["today", "programs", "edit", "zedit", "zones", "quick", "health"]) $("tab-" + t).classList.toggle("hidden", t !== tab);
+  for (const b of document.querySelectorAll("nav.tabs button")) b.classList.toggle("on", b.dataset.tab === (tab === "edit" ? "programs" : tab === "zedit" ? "zones" : tab === "quick" ? "today" : tab));
   renderToday();
   renderPrograms();
   if (document.activeElement?.id?.startsWith("min-")) zonesStale = true; else renderZones();
   renderEvents();
+  if (tab === "quick" && !document.activeElement?.closest?.("#tab-quick")) renderQuick();
   renderHealth();
 }
 
@@ -667,12 +703,28 @@ function checkProgram(p) {
 document.addEventListener("input", e => {
   const d = e.target.dataset;
   if (e.target.id?.startsWith("min-")) typedMinutes[e.target.id.slice(4)] = e.target.value;
+  if (e.target.dataset.qeach) { quick.each[e.target.dataset.qeach] = e.target.value; quickSummary(); }
+  if (e.target.id === "qCustom") {
+    const m = Number(e.target.value);
+    if (m > 0) { quick.minutes = m; quick.each = {}; }
+    for (const b of document.querySelectorAll("#qChips button")) b.classList.toggle("on", !e.target.value && Number(b.dataset.qmin) === quick.minutes);
+    for (const inp of document.querySelectorAll("[data-qeach]")) {
+      const z = state.zones.find(z => z.id === inp.dataset.qeach); inp.value = quickMinutes(z);
+    }
+    quickSummary();
+  }
   if (!editing) return;
   if (d.time != null) editing["Start times"][+d.time] = e.target.value;
   if (d.stepmin != null) { editing.Steps[+d.stepmin].minutes = e.target.value; $("pTotal").textContent = `${editing.Steps.reduce((a, s) => a + Number(s.minutes || 0), 0)} min in all`; }
 });
 document.addEventListener("change", e => {
   const d = e.target.dataset;
+  if (d.qpick) {
+    const id = d.qpick;
+    quick.picked = e.target.checked ? [...quick.picked.filter(x => x !== id), id] : quick.picked.filter(x => x !== id);
+    if (!e.target.checked) delete quick.each[id];
+    renderQuick();
+  }
   if (editing && d.stepzone != null) editing.Steps[+d.stepzone].zone = e.target.value;
   if (e.target.name === "pMode") drawEditor();
 });
@@ -757,6 +809,60 @@ const ZONE_FILTERS = ["All", "Field", "Greenhouses", "Nursery"];
 const FULL_BAR_MM = 25;   // used only until there's evaporation to compare against
 let zoneFilter = "All";
 let waterOpen = null;   // zone whose "Water…" row is open
+
+// ---------------------------------------------------------------- quick water
+
+// A zone's last 7 days: rain + irrigation - evaporation (null when it can't be worked out).
+function zoneNet(z) {
+  const rate = zoneRate(z), et7 = state.et7 || 0;
+  if (!rate || et7 < 1) return null;
+  const mins = (state.week || []).filter(e => e.Zone === z.id).reduce((a, e) => a + Number(e.Minutes || 0), 0);
+  return (z["Ignore rain"] ? 0 : state.rain7 || 0) + mins / 60 * rate - et7;
+}
+const QUICK_CHIPS = [10, 20, 30, 45];
+let quick = { minutes: 20, picked: [], each: {} };   // picked = zone ids in tick order; each = typed per-zone minutes
+
+function quickMinutes(z) {
+  const cap = Math.min(z["Max minutes"] || 0, farmMax());
+  return Number(quick.each[z.id] ?? Math.min(quick.minutes, cap));
+}
+function renderQuick() {
+  $("qChips").innerHTML = QUICK_CHIPS.map(m => `<button data-qmin="${m}" class="${m === quick.minutes && !$("qCustom").value ? "on" : ""}">${m}</button>`).join("");
+  const zones = state.zones.filter(z => z.Controller && z["Max minutes"] && controllable(z.Controller));
+  quick.picked = quick.picked.filter(id => zones.some(z => z.id === id));
+  $("qList").innerHTML = zones.map(z => {
+    const i = quick.picked.indexOf(z.id), net = zoneNet(z);
+    const cap = Math.min(z["Max minutes"] || 0, farmMax());
+    const bal = z["Ignore rain"] && net == null ? `<span class="small muted">under cover</span>`
+      : net == null ? "" : `<span class="small" style="color:var(${net >= -4 ? "--ok" : "--warn"})">${net >= 0 ? "+" + net.toFixed(0) + " mm" : (-net).toFixed(0) + " mm short"}</span>`;
+    return `<div class="qrow">
+      <input type="checkbox" data-qpick="${esc(z.id)}" ${i >= 0 ? "checked" : ""} aria-label="Water ${esc(z.Name)}">
+      <span style="flex:1;font-weight:600;min-width:0">${esc(shortZone(z.id))}<br>${bal}</span>
+      ${i >= 0 ? `<input type="number" min="1" max="${cap}" inputmode="numeric" data-qeach="${esc(z.id)}" value="${esc(quickMinutes(z))}" aria-label="Minutes for ${esc(z.Name)}"><span class="small muted">min</span>` : ""}
+      <span class="num">${i >= 0 ? i + 1 : ""}</span></div>`;
+  }).join("") || `<p class="muted">No zones are ready to control yet.</p>`;
+  quickSummary();
+}
+function quickSteps() {
+  return quick.picked.map(id => { const z = state.zones.find(z => z.id === id); return { zone: id, minutes: quickMinutes(z) }; });
+}
+function quickSummary() {
+  const steps = quickSteps(), total = steps.reduce((a, s) => a + (s.minutes || 0), 0);
+  const end = new Date(Date.now() + total * 60000);
+  $("qSummary").textContent = steps.length
+    ? `${steps.length} zone${steps.length > 1 ? "s" : ""} · ${total} min in all · done about ${fmtTime(end)}` : "Tick the zones to water.";
+  $("qGo").textContent = steps.length > 1 ? `Water ${steps.length} zones in a row` : steps.length ? `Water ${shortZone(steps[0].zone)}` : "Water";
+  $("qGo").disabled = !steps.length || !bridgeAlive();
+  $("qSave").classList.toggle("hidden", steps.length < 1);
+}
+function checkQuick(steps) {
+  for (const s of steps) {
+    const z = state.zones.find(z => z.id === s.zone);
+    const cap = Math.min(z?.["Max minutes"] || 0, farmMax());
+    if (!(s.minutes > 0 && s.minutes <= cap)) return `${shortZone(s.zone)}: enter 1 to ${cap} minutes.`;
+  }
+  return null;
+}
 
 function renderZones() {
   const watering = wateringByZone();
@@ -896,7 +1002,7 @@ document.addEventListener("click", async e => {
   const t = e.target.closest("button");
   if (!t) return;
   const d = t.dataset;
-  if (d.tab) { tab = d.tab; editing = null; render(); window.scrollTo(0, 0); return; }
+  if (d.tab) { tab = d.tab; editing = null; if (tab === "quick") renderQuick(); render(); window.scrollTo(0, 0); return; }
   if (d.start) {
     const z = state.zones.find(z => z.id === d.start);
     const minutes = Number($("min-" + z.id).value);
@@ -934,6 +1040,20 @@ document.addEventListener("click", async e => {
     if (pick == null) return;
     if (!p) { alert("Enter the number of a program."); return; }
     await request({ Action: "run_program", Program: p.id });
+  } else if (d.qmin) {
+    quick.minutes = Number(d.qmin); quick.each = {}; $("qCustom").value = ""; renderQuick();
+  } else if (t.id === "qGo") {
+    const steps = quickSteps(), why = checkQuick(steps);
+    if (why) { alert(why); return; }
+    const total = steps.reduce((a, s) => a + s.minutes, 0);
+    if (!confirm(`Water ${steps.map(s => `${shortZone(s.zone)} ${s.minutes} min`).join(", then ")}?\n${total} min in all.`)) return;
+    t.disabled = true;
+    if (await request({ Action: "run_queue", Steps: steps })) { quick = { minutes: quick.minutes, picked: [], each: {} }; tab = "today"; render(); }
+    t.disabled = false;
+  } else if (t.id === "qSave") {
+    const steps = quickSteps(), why = checkQuick(steps);
+    if (why) { alert(why); return; }
+    openEditor({ ...blankProgram(), Steps: steps });
   } else if (d.zfilter) {
     zoneFilter = d.zfilter; renderZones();
   } else if (d.wateropen) {
