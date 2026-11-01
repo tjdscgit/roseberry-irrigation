@@ -849,8 +849,7 @@ document.addEventListener("click", async e => {
       "Expected flow L/hr": flow === "" ? null : Number(flow), Notes: $("zNotes").value.trim() || null,
     }).eq("id", zEditing);
     t.disabled = false;
-    if (error) { alert("Couldn't save:
-" + error.message); return; }
+    if (error) { alert("Couldn't save: " + error.message); return; }
     zEditing = null; tab = "zones"; await load();
   } else if (d.edit) {
     openEditor(state.programs.find(p => p.id === d.edit));
