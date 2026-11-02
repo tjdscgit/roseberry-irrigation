@@ -443,6 +443,11 @@ function wateringByZone() {
   }
   for (const c of state.commands) {
     if (c.Action !== "start" || c.Status !== "running" || !c["Started at"]) continue;
+    // The controller is the truth: once it has reported since the start and isn't watering
+    // this zone, a request still marked "running" is stale.
+    const ctl = state.zones.find(z => z.id === c.Zone)?.Controller;
+    const devs = state.devices.filter(d => d.Kind === ctl || d.Kind === ctl + " valve");
+    if (!out[c.Zone] && devs.some(d => new Date(d["Updated at"]) - new Date(c["Started at"]) > 30000)) continue;
     const left = c.Minutes * 60 - (Date.now() - new Date(c["Started at"])) / 1000;
     const known = out[c.Zone] || (out[c.Zone] = {});
     known.byApp = true; known.command = c;
