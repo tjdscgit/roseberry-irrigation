@@ -383,7 +383,7 @@ async function load() {
   const [zones, devices, commands, events, alerts, weather, programs, week, rainWeek] = await Promise.all([
     sb.from("irrigation_zones").select("*").order("Order"),
     sb.from("device_status").select("*"),
-    sb.from("irrigation_commands").select("*").gte('"Requested at"', since)
+    sb.from("irrigation_commands").select("*").gte('"Requested at"', since).neq("Action", "app_open")
       .order('"Requested at"', { ascending: false }).limit(60),
     sb.from("irrigation_events").select("*").not("Zone", "is", null)
       .order('"Started at"', { ascending: false }).limit(25),
@@ -1224,11 +1224,13 @@ async function startApp() {
   $("app").classList.remove("hidden");
   try { $("who").value = localStorage.getItem("irrigation_who") || ""; } catch {}
   await load();
+  sayOpen();
   if (!channel) {
     channel = sb.channel("irrigation");
     for (const table of ["device_status", "irrigation_commands", "irrigation_events", "irrigation_alerts",
                          "weather_readings", "irrigation_zones", "irrigation_programs"]) {
-      channel.on("postgres_changes", { event: "*", schema: "public", table }, reloadSoon);
+      channel.on("postgres_changes", { event: "*", schema: "public", table },
+        p => { if ((p.new || p.old)?.Action !== "app_open") reloadSoon(); });   // "I'm open" pings change nothing on screen
     }
     channel.subscribe();
   }
@@ -1249,6 +1251,17 @@ $("loginForm").addEventListener("submit", async e => {
 // Not while a program is being edited, so a refresh never redraws the form under someone's thumb.
 setInterval(() => { if (!document.hidden && !$("app").classList.contains("hidden") && !editing) load().catch(showError); }, 60000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("app").classList.contains("hidden") && !editing) load().catch(showError); });
+
+// Tell the bridge the app is on screen, so it checks the Rain Bird every 30 s instead of
+// every 2 min: a zone the Rain Bird's own program starts then shows up within seconds.
+let lastHello = 0;
+function sayOpen() {
+  if (document.hidden || $("app").classList.contains("hidden") || Date.now() - lastHello < 55000) return;
+  lastHello = Date.now();
+  sb.from("irrigation_commands").insert({ Action: "app_open", "Requested by": who() }).then(() => {}, () => {});
+}
+setInterval(sayOpen, 60000);
+document.addEventListener("visibilitychange", sayOpen);
 
 sb.auth.getSession().then(({ data }) => data.session ? startApp().catch(showError) : showLogin());
 </script>
